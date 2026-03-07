@@ -186,15 +186,6 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Get version (strip leading v)
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Update package.json version
-        run: |
-          cd npm
-          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
-
       - name: Publish to npm
         run: cd npm && npm publish --access public
         env:
