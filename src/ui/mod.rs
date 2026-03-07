@@ -5,7 +5,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
 };
 use indicatif::{ProgressBar, ProgressStyle};
-use std::io::{stdout, Write};
+use std::io::stdout;
 use std::time::Duration;
 
 use crate::config::Config;
@@ -54,28 +54,7 @@ pub async fn startup_animation() {
     .unwrap_or_else(|_| println!("  One tool. Every model. Every platform.\n"));
 }
 
-pub fn print_banner() {
-    let lines = vec![
-        "  ███╗   ██╗██╗ ██████╗ ███╗   ██╗",
-        "  ████╗  ██║██║██╔═══██╗████╗  ██║",
-        "  ██╔██╗ ██║██║██║   ██║██╔██╗ ██║",
-        "  ██║╚██╗██║██║██║   ██║██║╚██╗██║",
-        "  ██║ ╚████║██║╚██████╔╝██║ ╚████║",
-        "  ╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝",
-    ];
-    println!();
-    for line in &lines {
-        println!("{}", line.bright_cyan().bold());
-    }
-    println!(
-        "  {}",
-        format!("The Universal AI CLI  v{}", env!("CARGO_PKG_VERSION")).bright_black()
-    );
-    println!(
-        "  {}\n",
-        "One tool. Every model. Every platform.".bright_black()
-    );
-}
+
 
 pub fn print_response(text: &str) {
     println!("\n{}", "-".repeat(60).bright_black());

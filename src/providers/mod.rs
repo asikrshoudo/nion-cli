@@ -31,6 +31,7 @@ pub trait Provider: Send + Sync {
     async fn complete(&self, messages: &[Message], model: &str) -> Result<String>;
     fn name(&self) -> &str;
     fn default_model(&self) -> &str;
+    #[allow(dead_code)]
     fn available_models(&self) -> Vec<String>;
 }
 
