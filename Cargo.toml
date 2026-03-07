@@ -1,6 +1,6 @@
 [package]
 name = "nion"
-version = "0.1.6"
+version = "0.1.8"
 edition = "2021"
 authors = ["asikrshoudo"]
 description = "Nion - The Universal AI CLI. One tool, every model, every platform."
@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 clap         = { version = "4",    features = ["derive", "color"] }
 tokio        = { version = "1",    features = ["full"] }
-reqwest      = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls"] }
+reqwest      = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots"] }
 serde        = { version = "1",    features = ["derive"] }
 serde_json   = "1"
 toml         = "0.8"

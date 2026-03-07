@@ -16,22 +16,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64 - static musl, works on every Linux distro
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             binary: nion-x86_64-linux
 
-          # Linux ARM64 - Termux on Android, Raspberry Pi, ARM servers
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             binary: nion-aarch64-linux
 
-          # macOS Intel
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: nion-x86_64-macos
 
-          # macOS Apple Silicon M1/M2/M3
           - os: macos-latest
             target: aarch64-apple-darwin
             binary: nion-aarch64-macos
@@ -56,14 +52,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-
 
-      # musl linker for x86_64 Linux
       - name: Install musl-tools (Linux x86_64)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y musl-tools
 
-      # musl cross-linker for ARM64 Linux (Termux)
       - name: Install ARM64 cross-linker (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
