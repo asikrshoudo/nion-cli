@@ -1,6 +1,6 @@
 {
   "name": "nion-cli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "The Universal AI CLI — chat with OpenAI, Anthropic, Google, Groq, and more from your terminal.",
   "bin": {
     "nion": "bin/nion"
