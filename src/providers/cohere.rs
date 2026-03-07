@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct CohereProvider {
     api_key: String,
@@ -96,9 +96,13 @@ impl Provider for CohereProvider {
         Ok(text)
     }
 
-    fn name(&self) -> &str { "cohere" }
+    fn name(&self) -> &str {
+        "cohere"
+    }
 
-    fn default_model(&self) -> &str { "command-r-plus-08-2024" }
+    fn default_model(&self) -> &str {
+        "command-r-plus-08-2024"
+    }
 
     fn available_models(&self) -> Vec<String> {
         vec![

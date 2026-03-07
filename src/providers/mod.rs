@@ -4,27 +4,27 @@ use async_trait::async_trait;
 use crate::config::Config;
 use crate::session::Message;
 
-mod openai;
 mod anthropic;
-mod google;
-mod groq;
-mod grok;
+mod cohere;
 mod deepseek;
+mod google;
+mod grok;
+mod groq;
 mod mistral;
+mod openai;
 mod perplexity;
 mod together;
-mod cohere;
 
-pub use openai::OpenAIProvider;
 pub use anthropic::AnthropicProvider;
-pub use google::GoogleProvider;
-pub use groq::GroqProvider;
-pub use grok::GrokProvider;
+pub use cohere::CohereProvider;
 pub use deepseek::DeepSeekProvider;
+pub use google::GoogleProvider;
+pub use grok::GrokProvider;
+pub use groq::GroqProvider;
 pub use mistral::MistralProvider;
+pub use openai::OpenAIProvider;
 pub use perplexity::PerplexityProvider;
 pub use together::TogetherProvider;
-pub use cohere::CohereProvider;
 
 #[async_trait]
 pub trait Provider: Send + Sync {

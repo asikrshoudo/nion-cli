@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct DeepSeekProvider {
     api_key: String,
@@ -88,9 +88,13 @@ impl Provider for DeepSeekProvider {
             .unwrap_or_default())
     }
 
-    fn name(&self) -> &str { "deepseek" }
+    fn name(&self) -> &str {
+        "deepseek"
+    }
 
-    fn default_model(&self) -> &str { "deepseek-chat" }
+    fn default_model(&self) -> &str {
+        "deepseek-chat"
+    }
 
     fn available_models(&self) -> Vec<String> {
         vec![

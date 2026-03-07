@@ -83,11 +83,11 @@ pub async fn download_and_replace(version: &str) -> Result<()> {
     let arch = env::consts::ARCH;
 
     let target = match (os, arch) {
-        ("linux",   "x86_64")  => "x86_64-unknown-linux-musl",
-        ("linux",   "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos",   "x86_64")  => "x86_64-apple-darwin",
-        ("macos",   "aarch64") => "aarch64-apple-darwin",
-        ("windows", _)         => {
+        ("linux", "x86_64") => "x86_64-unknown-linux-musl",
+        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
+        ("macos", "x86_64") => "x86_64-apple-darwin",
+        ("macos", "aarch64") => "aarch64-apple-darwin",
+        ("windows", _) => {
             println!("  Download the new .exe from:");
             println!(
                 "  https://github.com/{}/releases/tag/v{}",
@@ -132,10 +132,7 @@ pub async fn download_and_replace(version: &str) -> Result<()> {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &tmp,
-                    std::fs::Permissions::from_mode(0o755),
-                )?;
+                std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
             }
 
             std::fs::rename(&tmp, &current_exe)?;

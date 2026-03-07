@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct GoogleProvider {
     api_key: String,

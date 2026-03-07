@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct OpenAIProvider {
     api_key: String,
@@ -62,7 +62,6 @@ impl Provider for OpenAIProvider {
             })
             .collect();
 
-        // Reasoning models (o1, o3) do not support max_tokens
         let max_tokens = if is_reasoning_model(model) {
             None
         } else {
@@ -98,9 +97,13 @@ impl Provider for OpenAIProvider {
             .unwrap_or_default())
     }
 
-    fn name(&self) -> &str { "openai" }
+    fn name(&self) -> &str {
+        "openai"
+    }
 
-    fn default_model(&self) -> &str { "gpt-4o" }
+    fn default_model(&self) -> &str {
+        "gpt-4o"
+    }
 
     fn available_models(&self) -> Vec<String> {
         vec![

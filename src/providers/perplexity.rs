@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct PerplexityProvider {
     api_key: String,
@@ -86,9 +86,13 @@ impl Provider for PerplexityProvider {
             .unwrap_or_default())
     }
 
-    fn name(&self) -> &str { "perplexity" }
+    fn name(&self) -> &str {
+        "perplexity"
+    }
 
-    fn default_model(&self) -> &str { "sonar-pro" }
+    fn default_model(&self) -> &str {
+        "sonar-pro"
+    }
 
     fn available_models(&self) -> Vec<String> {
         vec![

@@ -22,7 +22,7 @@ enum Commands {
     Ask {
         #[arg(required = true, num_args = 1..)]
         question: Vec<String>,
-        /// Provider  (openai, anthropic, google, groq, grok, deepseek, mistral, perplexity, together, cohere)
+        /// Provider (openai, anthropic, google, groq, grok, deepseek, mistral, perplexity, together, cohere)
         #[arg(short, long)]
         provider: Option<String>,
         /// Model name
@@ -70,9 +70,11 @@ pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Ask { question, provider, model } => {
-            ask_command(&question.join(" "), provider.as_deref(), model.as_deref()).await
-        }
+        Commands::Ask {
+            question,
+            provider,
+            model,
+        } => ask_command(&question.join(" "), provider.as_deref(), model.as_deref()).await,
         Commands::Chat { provider, model } => {
             chat_command(provider.as_deref(), model.as_deref()).await
         }
@@ -81,7 +83,11 @@ pub async fn run() -> Result<()> {
     }
 }
 
-async fn ask_command(question: &str, provider_name: Option<&str>, model: Option<&str>) -> Result<()> {
+async fn ask_command(
+    question: &str,
+    provider_name: Option<&str>,
+    model: Option<&str>,
+) -> Result<()> {
     let cfg = config::Config::load()?;
 
     let provider_name = provider_name
@@ -103,7 +109,10 @@ async fn ask_command(question: &str, provider_name: Option<&str>, model: Option<
     spinner.finish_and_clear();
 
     match response {
-        Ok(text) => { ui::print_response(&text); Ok(()) }
+        Ok(text) => {
+            ui::print_response(&text);
+            Ok(())
+        }
         Err(e) => Err(e),
     }
 }
@@ -143,7 +152,6 @@ async fn chat_command(provider_name: Option<&str>, model: Option<&str>) -> Resul
 
         let lower = input.trim().to_lowercase();
 
-        // -- Slash commands --
         if lower == "/exit" || lower == "/quit" {
             let n = cfg.user_name.as_deref().unwrap_or("User");
             ui::print_goodbye(n);
@@ -179,7 +187,10 @@ async fn chat_command(provider_name: Option<&str>, model: Option<&str>) -> Resul
                     current_model = p.default_model().to_string();
                     current_provider_name = new_provider;
                     history.clear();
-                    ui::print_info(&format!("Switched to {} ({}). History cleared.", current_provider_name, current_model));
+                    ui::print_info(&format!(
+                        "Switched to {} ({}). History cleared.",
+                        current_provider_name, current_model
+                    ));
                 }
                 Err(e) => ui::print_error(&format!("{}", e)),
             }
@@ -198,7 +209,6 @@ async fn chat_command(provider_name: Option<&str>, model: Option<&str>) -> Resul
             continue;
         }
 
-        // -- Normal message --
         history.push(session::Message::user(&input));
 
         let provider = match providers::get_provider(&current_provider_name, &cfg) {

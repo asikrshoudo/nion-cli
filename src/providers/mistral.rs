@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct MistralProvider {
     api_key: String,
@@ -86,9 +86,13 @@ impl Provider for MistralProvider {
             .unwrap_or_default())
     }
 
-    fn name(&self) -> &str { "mistral" }
+    fn name(&self) -> &str {
+        "mistral"
+    }
 
-    fn default_model(&self) -> &str { "mistral-large-latest" }
+    fn default_model(&self) -> &str {
+        "mistral-large-latest"
+    }
 
     fn available_models(&self) -> Vec<String> {
         vec![

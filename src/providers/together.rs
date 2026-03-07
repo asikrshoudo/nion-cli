@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::session::Message;
 use super::Provider;
+use crate::session::Message;
 
 pub struct TogetherProvider {
     api_key: String,
@@ -88,9 +88,13 @@ impl Provider for TogetherProvider {
             .unwrap_or_default())
     }
 
-    fn name(&self) -> &str { "together" }
+    fn name(&self) -> &str {
+        "together"
+    }
 
-    fn default_model(&self) -> &str { "meta-llama/Llama-3.3-70B-Instruct-Turbo" }
+    fn default_model(&self) -> &str {
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    }
 
     fn available_models(&self) -> Vec<String> {
         vec![

@@ -1,10 +1,8 @@
 use anyhow::Result;
 use colored::*;
 use crossterm::{
-    cursor,
     execute,
-    style::{Color, Print, SetForegroundColor, ResetColor},
-    terminal,
+    style::{Color, Print, ResetColor, SetForegroundColor},
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{stdout, Write};
@@ -12,7 +10,6 @@ use std::time::Duration;
 
 use crate::config::Config;
 
-// Startup animation - renders the banner line by line with a delay
 pub async fn startup_animation() {
     let lines = vec![
         "  ███╗   ██╗██╗ ██████╗ ███╗   ██╗",
@@ -35,20 +32,17 @@ pub async fn startup_animation() {
         std::thread::sleep(Duration::from_millis(55));
     }
 
-    // Tagline fade-in
     std::thread::sleep(Duration::from_millis(80));
     execute!(
         stdout(),
         SetForegroundColor(Color::DarkGrey),
-        Print(format!("  The Universal AI CLI  v{}\n", env!("CARGO_PKG_VERSION"))),
+        Print(format!(
+            "  The Universal AI CLI  v{}\n",
+            env!("CARGO_PKG_VERSION")
+        )),
         ResetColor
     )
-    .unwrap_or_else(|_| {
-        println!(
-            "  The Universal AI CLI  v{}",
-            env!("CARGO_PKG_VERSION")
-        )
-    });
+    .unwrap_or_else(|_| println!("  The Universal AI CLI  v{}", env!("CARGO_PKG_VERSION")));
 
     std::thread::sleep(Duration::from_millis(60));
     execute!(
@@ -77,7 +71,10 @@ pub fn print_banner() {
         "  {}",
         format!("The Universal AI CLI  v{}", env!("CARGO_PKG_VERSION")).bright_black()
     );
-    println!("  {}\n", "One tool. Every model. Every platform.".bright_black());
+    println!(
+        "  {}\n",
+        "One tool. Every model. Every platform.".bright_black()
+    );
 }
 
 pub fn print_response(text: &str) {
@@ -105,8 +102,6 @@ pub fn print_response(text: &str) {
             println!("{}", line.bright_cyan().bold());
         } else if line.starts_with("**") && line.ends_with("**") {
             println!("{}", line.replace("**", "").bold());
-        } else if line.starts_with("- ") || line.starts_with("* ") {
-            println!("{}", line.white());
         } else {
             println!("{}", line.white());
         }
@@ -138,10 +133,7 @@ pub fn print_chat_help() {
     println!("  {}        Exit the session", "/exit".cyan());
     println!("  {}       Clear chat history", "/clear".cyan());
     println!("  {}        Show this help", "/help".cyan());
-    println!(
-        "  {}  Switch model  e.g. /model gpt-4o",
-        "/model <n>".cyan()
-    );
+    println!("  {}  Switch model  e.g. /model gpt-4o", "/model <n>".cyan());
     println!(
         "  {}  Switch provider  e.g. /switch groq",
         "/switch <p>".cyan()
@@ -245,88 +237,88 @@ pub fn print_models_list() {
         (
             "OpenAI",
             vec![
-                ("gpt-4o",                      "Latest flagship, vision support"),
-                ("gpt-4o-mini",                 "Fast and affordable"),
-                ("gpt-4-turbo",                 "128k context"),
-                ("gpt-3.5-turbo",               "Budget option"),
-                ("o1",                          "Advanced reasoning"),
-                ("o1-mini",                     "Fast reasoning"),
-                ("o3-mini",                     "Latest reasoning model"),
+                ("gpt-4o", "Latest flagship, vision support"),
+                ("gpt-4o-mini", "Fast and affordable"),
+                ("gpt-4-turbo", "128k context"),
+                ("gpt-3.5-turbo", "Budget option"),
+                ("o1", "Advanced reasoning"),
+                ("o1-mini", "Fast reasoning"),
+                ("o3-mini", "Latest reasoning model"),
             ],
         ),
         (
             "OpenAI Codex / Instruct",
             vec![
-                ("gpt-4o",                      "Best for coding tasks"),
-                ("o3-mini",                     "Reasoning + code"),
+                ("gpt-4o", "Best for coding tasks"),
+                ("o3-mini", "Reasoning + code"),
             ],
         ),
         (
             "Anthropic",
             vec![
-                ("claude-3-5-sonnet-20241022",  "Best overall"),
-                ("claude-3-5-haiku-20241022",   "Fast and affordable"),
-                ("claude-3-opus-20240229",       "Most powerful Claude"),
-                ("claude-3-haiku-20240307",      "Budget option"),
+                ("claude-3-5-sonnet-20241022", "Best overall"),
+                ("claude-3-5-haiku-20241022", "Fast and affordable"),
+                ("claude-3-opus-20240229", "Most powerful Claude"),
+                ("claude-3-haiku-20240307", "Budget option"),
             ],
         ),
         (
             "Google",
             vec![
-                ("gemini-1.5-pro",              "1M context, multimodal"),
-                ("gemini-1.5-flash",            "Fast and efficient"),
-                ("gemini-2.0-flash",            "Latest Gemini"),
+                ("gemini-1.5-pro", "1M context, multimodal"),
+                ("gemini-1.5-flash", "Fast and efficient"),
+                ("gemini-2.0-flash", "Latest Gemini"),
                 ("gemini-2.0-flash-thinking-exp", "Thinking / reasoning"),
             ],
         ),
         (
             "Groq  [free tier available]",
             vec![
-                ("llama-3.3-70b-versatile",     "Best Llama, very fast"),
-                ("llama-3.1-8b-instant",        "Ultra fast"),
-                ("llama3-70b-8192",             "Stable Llama 3"),
-                ("mixtral-8x7b-32768",          "Strong reasoning"),
-                ("gemma2-9b-it",                "Google Gemma via Groq"),
-                ("qwen-2.5-72b",                "Alibaba Qwen 72B"),
+                ("llama-3.3-70b-versatile", "Best Llama, very fast"),
+                ("llama-3.1-8b-instant", "Ultra fast"),
+                ("llama3-70b-8192", "Stable Llama 3"),
+                ("mixtral-8x7b-32768", "Strong reasoning"),
+                ("gemma2-9b-it", "Google Gemma via Groq"),
+                ("qwen-2.5-72b", "Alibaba Qwen 72B"),
             ],
         ),
         (
             "xAI",
             vec![
-                ("grok-2-latest",               "Latest Grok"),
-                ("grok-2-vision-latest",        "Vision support"),
-                ("grok-beta",                   "Stable Grok"),
+                ("grok-2-latest", "Latest Grok"),
+                ("grok-2-vision-latest", "Vision support"),
+                ("grok-beta", "Stable Grok"),
             ],
         ),
         (
             "DeepSeek",
             vec![
-                ("deepseek-chat",               "DeepSeek V3"),
-                ("deepseek-reasoner",           "DeepSeek R1 reasoning"),
+                ("deepseek-chat", "DeepSeek V3"),
+                ("deepseek-reasoner", "DeepSeek R1 reasoning"),
             ],
         ),
         (
             "Mistral",
             vec![
-                ("mistral-large-latest",        "Best Mistral"),
-                ("mistral-small-latest",        "Fast and cheap"),
-                ("codestral-latest",            "Best for code"),
-                ("open-mistral-nemo",           "Open source"),
+                ("mistral-large-latest", "Best Mistral"),
+                ("mistral-small-latest", "Fast and cheap"),
+                ("codestral-latest", "Best for code"),
+                ("open-mistral-nemo", "Open source"),
             ],
         ),
         (
             "Perplexity",
             vec![
-                ("sonar-pro",                   "Web search built-in"),
-                ("sonar",                       "Fast web search"),
-                ("sonar-reasoning-pro",         "Reasoning + web"),
+                ("sonar-pro", "Web search built-in"),
+                ("sonar", "Fast web search"),
+                ("sonar-reasoning-pro", "Reasoning + web"),
             ],
         ),
         (
             "Together AI",
             vec![
                 ("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B"),
-                ("deepseek-ai/DeepSeek-V3",     "DeepSeek V3"),
+                ("deepseek-ai/DeepSeek-V3", "DeepSeek V3"),
                 ("Qwen/Qwen2.5-72B-Instruct-Turbo", "Qwen 72B"),
                 ("mistralai/Mixtral-8x22B-Instruct-v0.1", "Mixtral 8x22B"),
             ],
@@ -334,9 +326,9 @@ pub fn print_models_list() {
         (
             "Cohere",
             vec![
-                ("command-r-plus-08-2024",      "Best Cohere model"),
-                ("command-r-08-2024",           "Fast Cohere"),
-                ("command-light",               "Lightweight"),
+                ("command-r-plus-08-2024", "Best Cohere model"),
+                ("command-r-08-2024", "Fast Cohere"),
+                ("command-light", "Lightweight"),
             ],
         ),
     ];
@@ -344,11 +336,7 @@ pub fn print_models_list() {
     for (name, models) in providers {
         println!("\n  {}", name.bright_cyan().bold());
         for (model, desc) in models {
-            println!(
-                "    {:45} {}",
-                model.white().bold(),
-                desc.bright_black()
-            );
+            println!("    {:45} {}", model.white().bold(), desc.bright_black());
         }
     }
     println!();
