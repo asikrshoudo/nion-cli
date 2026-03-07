@@ -24,8 +24,8 @@ function getBinaryName() {
       : "nion-x86_64-macos";
   }
 
-  if (platform === "linux") {
-    return arch === "arm64" || arch === "aarch64"
+  if (platform === "linux" || platform === "android") {
+    return arch === "arm64" || arch === "aarch64" || arch === "arm"
       ? "nion-aarch64-linux"
       : "nion-x86_64-linux";
   }
