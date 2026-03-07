@@ -1,0 +1,26 @@
+{
+  "name": "nion-cli",
+  "version": "0.3.1",
+  "description": "The Universal AI CLI — chat with OpenAI, Anthropic, Google, Groq, and more from your terminal.",
+  "bin": {
+    "nion": "bin/nion"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "bin/",
+    "install.js"
+  ],
+  "keywords": ["ai", "cli", "openai", "anthropic", "claude", "gemini", "groq", "llm"],
+  "author": "asikrshoudo",
+  "license": "AGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asikrshoudo/nion-cli"
+  },
+  "homepage": "https://github.com/asikrshoudo/nion-cli",
+  "engines": {
+    "node": ">=14"
+  }
+}

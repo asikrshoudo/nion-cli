@@ -1,0 +1,201 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.binary }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 — static musl, works on every Linux distro
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary: nion-x86_64-linux
+            android: false
+            windows: false
+
+          # Android ARM64 — Termux (Bionic libc, needs Android NDK)
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+            binary: nion-aarch64-linux
+            android: true
+            windows: false
+
+          # macOS Intel
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary: nion-x86_64-macos
+            android: false
+            windows: false
+
+          # macOS Apple Silicon M1/M2/M3
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: nion-aarch64-macos
+            android: false
+            windows: false
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: nion-x86_64-windows.exe
+            android: false
+            windows: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-
+
+      # musl tools for static Linux binary
+      - name: Install musl-tools (Linux x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y musl-tools
+
+      # Android NDK for Termux binary
+      - name: Setup Android NDK (Termux)
+        if: matrix.android == true
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: true
+
+      - name: Configure Android linker (Termux)
+        if: matrix.android == true
+        run: |
+          NDK_HOME="${{ steps.setup-ndk.outputs.ndk-path }}"
+          TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android35-clang" >> $GITHUB_ENV
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android35-clang" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> $GITHUB_ENV
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Copy binary (Unix/Android)
+        if: matrix.windows == false
+        run: cp target/${{ matrix.target }}/release/nion ${{ matrix.binary }}
+
+      - name: Copy binary (Windows)
+        if: matrix.windows == true
+        run: cp target/${{ matrix.target }}/release/nion.exe ${{ matrix.binary }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: ${{ matrix.binary }}
+          retention-days: 1
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries/
+          merge-multiple: true
+
+      - name: Make Unix binaries executable
+        run: |
+          chmod +x binaries/nion-x86_64-linux
+          chmod +x binaries/nion-aarch64-linux
+          chmod +x binaries/nion-x86_64-macos
+          chmod +x binaries/nion-aarch64-macos
+
+      - name: Get tag version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: "Nion ${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## Nion ${{ steps.version.outputs.VERSION }}
+
+            ### Install (one line)
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/asikrshoudo/nion-cli/main/install.sh | bash
+            ```
+
+            ### Platforms
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x86_64 | `nion-x86_64-linux` |
+            | Android ARM64 (Termux) | `nion-aarch64-linux` |
+            | macOS Intel | `nion-x86_64-macos` |
+            | macOS Apple Silicon | `nion-aarch64-macos` |
+            | Windows x86_64 | `nion-x86_64-windows.exe` |
+
+            ### Quick start
+            ```
+            nion config setup
+            nion chat
+            ```
+          draft: false
+          prerelease: false
+          files: binaries/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  npm-publish:
+    name: Publish to npm
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Get version (strip leading v)
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update package.json version
+        run: |
+          cd npm
+          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
+
+      - name: Publish to npm
+        run: cd npm && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
