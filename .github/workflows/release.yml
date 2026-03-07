@@ -56,13 +56,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-
 
+      # musl linker for x86_64 Linux
       - name: Install musl-tools (Linux x86_64)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y musl-tools
 
-      - name: Install ARM64 cross-compiler (Linux ARM64)
+      # musl cross-linker for ARM64 Linux (Termux)
+      - name: Install ARM64 cross-linker (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           sudo apt-get update -y
