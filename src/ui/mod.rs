@@ -1,11 +1,8 @@
 use anyhow::Result;
 use colored::*;
 use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     style::{Color, Print, ResetColor, SetForegroundColor},
-    terminal::{self, ClearType},
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{stdout, Write};
@@ -58,7 +55,7 @@ pub async fn startup_animation() {
 }
 
 pub fn print_response(text: &str) {
-    println!("\n{}", "-".repeat(60).bright_black());
+    println!("\n{}", "─".repeat(60).bright_black());
 
     let mut in_code_block = false;
     let mut lang = String::new();
@@ -87,12 +84,12 @@ pub fn print_response(text: &str) {
         }
     }
 
-    println!("{}\n", "-".repeat(60).bright_black());
+    println!("{}\n", "─".repeat(60).bright_black());
 }
 
 pub fn print_chat_header(cfg: &Config, provider: &str, model: &str) {
     let name = cfg.user_name.as_deref().unwrap_or("User");
-    println!("\n{}", "-".repeat(60).bright_black());
+    println!("\n{}", "─".repeat(60).bright_black());
     println!(
         "  {}    {}  {}   {}",
         format!("Hello, {}", name).bright_white().bold(),
@@ -105,7 +102,7 @@ pub fn print_chat_header(cfg: &Config, provider: &str, model: &str) {
         "Commands:  /exit  /clear  /help  /model <n>  /switch <provider>  /name <new_name>"
             .bright_black()
     );
-    println!("{}\n", "-".repeat(60).bright_black());
+    println!("{}\n", "─".repeat(60).bright_black());
 }
 
 pub fn print_chat_help() {
@@ -149,15 +146,15 @@ pub fn start_spinner(msg: &str) -> ProgressBar {
 }
 
 pub fn print_success(msg: &str) {
-    println!("  [OK]  {}", msg.white());
+    println!("  {} {}", "[OK]".bright_green().bold(), msg.white());
 }
 
 pub fn print_error(msg: &str) {
-    eprintln!("  [ERR] {}", msg.red());
+    eprintln!("  {} {}", "[ERR]".bright_red().bold(), msg.red());
 }
 
 pub fn print_info(msg: &str) {
-    println!("  [--]  {}", msg.bright_black());
+    println!("  {} {}", "[--]".bright_black(), msg.bright_black());
 }
 
 pub fn print_goodbye(name: &str) {
@@ -165,151 +162,145 @@ pub fn print_goodbye(name: &str) {
 }
 
 pub fn print_config(cfg: &Config) {
-    println!("\n  {}", "Nion Configuration".bright_yellow().bold());
-    println!("{}", "-".repeat(40).bright_black());
-    println!(
-        "  {}: {}",
-        "Name".bright_black(),
-        cfg.user_name.as_deref().unwrap_or("not set").bright_white()
+    println!();
+    box_line_top(40);
+    box_title("  Nion Configuration", 40);
+    box_line_mid(40);
+    box_row(
+        &format!(
+            "  Name        {}",
+            cfg.user_name.as_deref().unwrap_or("not set").bright_white()
+        ),
+        40,
     );
-    println!(
-        "  {}: {}",
-        "Default Provider".bright_black(),
-        cfg.default_provider
-            .as_deref()
-            .unwrap_or("not set")
-            .bright_cyan()
+    box_row(
+        &format!(
+            "  Provider    {}",
+            cfg.default_provider
+                .as_deref()
+                .unwrap_or("not set")
+                .bright_cyan()
+        ),
+        40,
     );
-    println!(
-        "  {}: {}",
-        "Default Model".bright_black(),
-        cfg.default_model
-            .as_deref()
-            .unwrap_or("not set")
-            .bright_cyan()
+    box_row(
+        &format!(
+            "  Model       {}",
+            cfg.default_model
+                .as_deref()
+                .unwrap_or("not set")
+                .bright_cyan()
+        ),
+        40,
     );
+    box_line_mid(40);
 
     if cfg.api_keys.is_empty() {
-        println!("\n  No API keys configured.");
-        println!("  Run 'nion config setup' to add keys.");
+        box_row("  No API keys configured.", 40);
     } else {
-        println!("\n  {}", "Configured Providers:".bright_black());
+        box_row("  Configured providers:", 40);
         for (provider, _) in &cfg.api_keys {
-            println!("  [+]  {}", provider.bright_cyan());
+            box_row(&format!("    ✓  {}", provider.bright_cyan()), 40);
         }
     }
 
-    println!(
-        "\n  Config: {}",
-        crate::config::Config::config_path()
-            .display()
-            .to_string()
-            .bright_black()
+    box_row(
+        &format!(
+            "  Config: {}",
+            crate::config::Config::config_path()
+                .display()
+                .to_string()
+                .bright_black()
+        ),
+        40,
     );
+    box_line_bot(40);
     println!();
 }
 
 pub fn print_models_list() {
-    println!("\n  {}", "All Available Models".bright_yellow().bold());
-    println!("{}", "-".repeat(60).bright_black());
+    println!();
+    box_line_top(64);
+    box_title("  All Available Models", 64);
+    box_line_bot(64);
 
-    let providers: Vec<(&str, Vec<(&str, &str)>)> = vec![
-        (
-            "OpenAI",
-            vec![
-                ("gpt-4o", "Latest flagship, vision support"),
-                ("gpt-4o-mini", "Fast and affordable"),
-                ("gpt-4-turbo", "128k context"),
-                ("gpt-3.5-turbo", "Budget option"),
-                ("o1", "Advanced reasoning"),
-                ("o1-mini", "Fast reasoning"),
-                ("o3-mini", "Latest reasoning model"),
-            ],
-        ),
-        (
-            "Anthropic",
-            vec![
-                ("claude-3-5-sonnet-20241022", "Best overall"),
-                ("claude-3-5-haiku-20241022", "Fast and affordable"),
-                ("claude-3-opus-20240229", "Most powerful Claude"),
-                ("claude-3-haiku-20240307", "Budget option"),
-            ],
-        ),
-        (
-            "Google",
-            vec![
-                ("gemini-1.5-pro", "1M context, multimodal"),
-                ("gemini-1.5-flash", "Fast and efficient"),
-                ("gemini-2.0-flash", "Latest Gemini"),
-                ("gemini-2.0-flash-thinking-exp", "Thinking / reasoning"),
-            ],
-        ),
-        (
-            "Groq  [free tier available]",
-            vec![
-                ("llama-3.3-70b-versatile", "Best Llama, very fast"),
-                ("llama-3.1-8b-instant", "Ultra fast"),
-                ("llama3-70b-8192", "Stable Llama 3"),
-                ("mixtral-8x7b-32768", "Strong reasoning"),
-                ("gemma2-9b-it", "Google Gemma via Groq"),
-                ("qwen-2.5-72b", "Alibaba Qwen 72B"),
-            ],
-        ),
-        (
-            "xAI",
-            vec![
-                ("grok-2-latest", "Latest Grok"),
-                ("grok-2-vision-latest", "Vision support"),
-                ("grok-beta", "Stable Grok"),
-            ],
-        ),
-        (
-            "DeepSeek",
-            vec![
-                ("deepseek-chat", "DeepSeek V3"),
-                ("deepseek-reasoner", "DeepSeek R1 reasoning"),
-            ],
-        ),
-        (
-            "Mistral",
-            vec![
-                ("mistral-large-latest", "Best Mistral"),
-                ("mistral-small-latest", "Fast and cheap"),
-                ("codestral-latest", "Best for code"),
-                ("open-mistral-nemo", "Open source"),
-            ],
-        ),
-        (
-            "Perplexity",
-            vec![
-                ("sonar-pro", "Web search built-in"),
-                ("sonar", "Fast web search"),
-                ("sonar-reasoning-pro", "Reasoning + web"),
-            ],
-        ),
-        (
-            "Together AI",
-            vec![
-                ("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B"),
-                ("deepseek-ai/DeepSeek-V3", "DeepSeek V3"),
-                ("Qwen/Qwen2.5-72B-Instruct-Turbo", "Qwen 72B"),
-                ("mistralai/Mixtral-8x22B-Instruct-v0.1", "Mixtral 8x22B"),
-            ],
-        ),
-        (
-            "Cohere",
-            vec![
-                ("command-r-plus-08-2024", "Best Cohere model"),
-                ("command-r-08-2024", "Fast Cohere"),
-                ("command-light", "Lightweight"),
-            ],
-        ),
+    let providers: Vec<(&str, &str, Vec<(&str, &str)>)> = vec![
+        ("OpenAI", "", vec![
+            ("gpt-4o",          "Latest flagship, vision support"),
+            ("gpt-4o-mini",     "Fast and affordable"),
+            ("gpt-4-turbo",     "128k context"),
+            ("gpt-3.5-turbo",   "Budget option"),
+            ("o1",              "Advanced reasoning"),
+            ("o1-mini",         "Fast reasoning"),
+            ("o3-mini",         "Latest reasoning model"),
+        ]),
+        ("Anthropic", "", vec![
+            ("claude-3-5-sonnet-20241022", "Best overall"),
+            ("claude-3-5-haiku-20241022",  "Fast and affordable"),
+            ("claude-3-opus-20240229",     "Most powerful Claude"),
+            ("claude-3-haiku-20240307",    "Budget option"),
+        ]),
+        ("Google", "", vec![
+            ("gemini-1.5-pro",                "1M context, multimodal"),
+            ("gemini-1.5-flash",              "Fast and efficient"),
+            ("gemini-2.0-flash",              "Latest Gemini"),
+            ("gemini-2.0-flash-thinking-exp", "Thinking / reasoning"),
+        ]),
+        ("Groq", "⚡ free tier", vec![
+            ("llama-3.3-70b-versatile", "Best Llama, very fast"),
+            ("llama-3.1-8b-instant",    "Ultra fast"),
+            ("llama3-70b-8192",         "Stable Llama 3"),
+            ("mixtral-8x7b-32768",      "Strong reasoning"),
+            ("gemma2-9b-it",            "Google Gemma via Groq"),
+            ("qwen-2.5-72b",            "Alibaba Qwen 72B"),
+        ]),
+        ("xAI", "", vec![
+            ("grok-2-latest",        "Latest Grok"),
+            ("grok-2-vision-latest", "Vision support"),
+            ("grok-beta",            "Stable Grok"),
+        ]),
+        ("DeepSeek", "", vec![
+            ("deepseek-chat",     "DeepSeek V3"),
+            ("deepseek-reasoner", "DeepSeek R1 reasoning"),
+        ]),
+        ("Mistral", "", vec![
+            ("mistral-large-latest", "Best Mistral"),
+            ("mistral-small-latest", "Fast and cheap"),
+            ("codestral-latest",     "Best for code"),
+            ("open-mistral-nemo",    "Open source"),
+        ]),
+        ("Perplexity", "", vec![
+            ("sonar-pro",            "Web search built-in"),
+            ("sonar",                "Fast web search"),
+            ("sonar-reasoning-pro",  "Reasoning + web"),
+        ]),
+        ("Together AI", "", vec![
+            ("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B"),
+            ("deepseek-ai/DeepSeek-V3",                  "DeepSeek V3"),
+            ("Qwen/Qwen2.5-72B-Instruct-Turbo",          "Qwen 72B"),
+            ("mistralai/Mixtral-8x22B-Instruct-v0.1",    "Mixtral 8x22B"),
+        ]),
+        ("Cohere", "", vec![
+            ("command-r-plus-08-2024", "Best Cohere model"),
+            ("command-r-08-2024",      "Fast Cohere"),
+            ("command-light",          "Lightweight"),
+        ]),
     ];
 
-    for (name, models) in providers {
-        println!("\n  {}", name.bright_cyan().bold());
+    for (name, badge, models) in providers {
+        println!();
+        if badge.is_empty() {
+            println!("  {}", name.bright_cyan().bold());
+        } else {
+            println!("  {}  {}", name.bright_cyan().bold(), badge.bright_yellow());
+        }
+        println!("  {}", "─".repeat(60).bright_black());
         for (model, desc) in models {
-            println!("    {:45} {}", model.white().bold(), desc.bright_black());
+            println!(
+                "    {}  {}",
+                format!("{:<45}", model).white().bold(),
+                desc.bright_black()
+            );
         }
     }
     println!();
@@ -319,12 +310,13 @@ pub async fn show_update_prompt(new_version: &str) -> Result<()> {
     use std::io::{self, Write};
 
     println!();
-    println!("{}", "-".repeat(60).bright_yellow());
-    println!(
-        "  Nion v{} is available.",
-        new_version.bright_yellow().bold()
+    box_line_top(60);
+    box_title(
+        &format!("  ⚡ Nion v{} is available!", new_version),
+        60,
     );
-    print!("  Would you like to update? [Y/n] ");
+    box_line_bot(60);
+    print!("\n  Would you like to update? [Y/n] ");
     io::stdout().flush()?;
 
     let mut input = String::new();
@@ -336,90 +328,126 @@ pub async fn show_update_prompt(new_version: &str) -> Result<()> {
     } else {
         print_info("Keeping current version. Run 'nion update' anytime.");
     }
-    println!("{}", "-".repeat(60).bright_yellow());
 
     Ok(())
 }
 
+/// Numbered box menu — works on every terminal including Termux.
+/// Returns the index of the selected option.
 pub fn select_menu(options: &[String], default: usize) -> Result<usize> {
-    let mut selected = default.min(options.len().saturating_sub(1));
-    let count = options.len();
+    use std::io::{self, Write};
 
-    terminal::enable_raw_mode()?;
-    execute!(stdout(), cursor::Hide)?;
-
-    let draw = |sel: usize| -> Result<()> {
-        let mut out = stdout();
-        for (i, opt) in options.iter().enumerate() {
-            execute!(out, terminal::Clear(ClearType::CurrentLine), cursor::MoveToColumn(0))?;
-            if i == sel {
-                execute!(
-                    out,
-                    SetForegroundColor(Color::Cyan),
-                    Print(format!("  \u{276f} {}\r\n", opt)),
-                    ResetColor,
-                )?;
-            } else {
-                execute!(
-                    out,
-                    SetForegroundColor(Color::DarkGrey),
-                    Print(format!("    {}\r\n", opt)),
-                    ResetColor,
-                )?;
-            }
-        }
-        // hint line
-        execute!(
-            out,
-            terminal::Clear(ClearType::CurrentLine),
-            cursor::MoveToColumn(0),
-            SetForegroundColor(Color::DarkGrey),
-            Print("  \u{2191}\u{2193} move   Enter select"),
-            ResetColor,
-        )?;
-        out.flush()?;
-        Ok(())
-    };
-
-    draw(selected)?;
+    let width = options
+        .iter()
+        .map(|o| o.len())
+        .max()
+        .unwrap_or(20)
+        .max(28) + 10;
 
     loop {
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            let prev = selected;
-            match key.code {
-                KeyCode::Up => {
-                    selected = if selected == 0 { count - 1 } else { selected - 1 };
-                }
-                KeyCode::Down => {
-                    selected = if selected == count - 1 { 0 } else { selected + 1 };
-                }
-                KeyCode::Enter => break,
-                KeyCode::Esc => break,
-                _ => continue,
-            }
-            if selected != prev {
-                execute!(stdout(), cursor::MoveUp((count + 1) as u16))?;
-                draw(selected)?;
+        println!();
+        box_line_top(width);
+        box_title("  Select a provider", width);
+        box_line_mid(width);
+
+        for (i, opt) in options.iter().enumerate() {
+            let num = if i == options.len() - 1 {
+                " 0".to_string()
+            } else {
+                format!("{:2}", i + 1)
+            };
+
+            let is_default = i == default;
+            let marker = if is_default { "›" } else { " " };
+
+            let row = format!("  {} {}  {}", marker, num, opt);
+            if is_default {
+                println!(
+                    "{}{}{}",
+                    "│".bright_black(),
+                    format!("{:<width$}", row, width = width - 2).bright_cyan().bold(),
+                    "│".bright_black()
+                );
+            } else {
+                println!(
+                    "{}{}{}",
+                    "│".bright_black(),
+                    format!("{:<width$}", row, width = width - 2).white(),
+                    "│".bright_black()
+                );
             }
         }
-    }
 
-    // Clear menu
-    execute!(stdout(), cursor::MoveUp((count + 1) as u16))?;
-    for _ in 0..(count + 1) {
-        execute!(
-            stdout(),
-            terminal::Clear(ClearType::CurrentLine),
-            cursor::MoveToColumn(0),
-            Print("\r\n"),
-        )?;
-    }
-    execute!(stdout(), cursor::MoveUp((count + 1) as u16), cursor::Show)?;
+        box_line_bot(width);
 
-    terminal::disable_raw_mode()?;
-    println!();
-    Ok(selected)
+        print!("\n  Choice [1-{}, 0=last]: ", options.len() - 1);
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+
+        if trimmed.is_empty() {
+            return Ok(default);
+        }
+
+        if let Ok(n) = trimmed.parse::<usize>() {
+            if n == 0 {
+                return Ok(options.len() - 1); // "Done"
+            } else if n >= 1 && n <= options.len() - 1 {
+                return Ok(n - 1);
+            }
+        }
+
+        print_error("Invalid choice, try again.");
+    }
+}
+
+// ── Box drawing helpers ────────────────────────────────────────────────────
+
+fn box_line_top(width: usize) {
+    println!(
+        "{}{}{}",
+        "┌".bright_black(),
+        "─".repeat(width - 2).bright_black(),
+        "┐".bright_black()
+    );
+}
+
+fn box_line_mid(width: usize) {
+    println!(
+        "{}{}{}",
+        "├".bright_black(),
+        "─".repeat(width - 2).bright_black(),
+        "┤".bright_black()
+    );
+}
+
+fn box_line_bot(width: usize) {
+    println!(
+        "{}{}{}",
+        "└".bright_black(),
+        "─".repeat(width - 2).bright_black(),
+        "┘".bright_black()
+    );
+}
+
+fn box_title(text: &str, width: usize) {
+    println!(
+        "{}{}{}",
+        "│".bright_black(),
+        format!("{:<width$}", text, width = width - 2)
+            .bright_yellow()
+            .bold(),
+        "│".bright_black()
+    );
+}
+
+fn box_row(text: &str, width: usize) {
+    println!(
+        "{}{}{}",
+        "│".bright_black(),
+        format!("{:<width$}", text, width = width - 2).white(),
+        "│".bright_black()
+    );
 }
