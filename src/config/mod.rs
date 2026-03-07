@@ -94,13 +94,6 @@ pub async fn run_setup_wizard() -> Result<()> {
     use crate::ui;
     use std::io::{self, Write};
 
-    println!();
-    println!("  Nion Setup");
-    println!("  Press Enter to skip any provider.");
-    println!();
-
-    let mut cfg = Config::load()?;
-
     let providers: Vec<(&str, &str, &str)> = vec![
         ("openai",     "OpenAI",      "https://platform.openai.com/api-keys"),
         ("anthropic",  "Anthropic",   "https://console.anthropic.com"),
@@ -114,7 +107,45 @@ pub async fn run_setup_wizard() -> Result<()> {
         ("cohere",     "Cohere",      "https://dashboard.cohere.com/api-keys"),
     ];
 
-    for (id, name, url) in &providers {
+    let mut cfg = Config::load()?;
+
+    println!();
+    println!("  Nion Setup");
+    println!("  Select a provider to configure, then enter its API key.");
+    println!();
+
+    loop {
+        // Show which providers are already configured
+        let labels: Vec<String> = providers
+            .iter()
+            .map(|(id, name, _)| {
+                if cfg.get_api_key(id).is_some() {
+                    format!("{} [configured]", name)
+                } else {
+                    name.to_string()
+                }
+            })
+            .collect();
+
+        // Add "Done" option at the end
+        let mut menu_items = labels.clone();
+        menu_items.push("Done — finish setup".to_string());
+
+        let default_idx = providers
+            .iter()
+            .position(|(id, _, _)| cfg.default_provider.as_deref() == Some(id))
+            .unwrap_or(3); // groq default
+
+        let selected = ui::select_menu(&menu_items, default_idx)?;
+
+        // "Done" selected
+        if selected == providers.len() {
+            break;
+        }
+
+        let (id, name, url) = providers[selected];
+
+        println!();
         println!("  {} -- {}", name, url);
         print!("  API Key: ");
         io::stdout().flush()?;
@@ -125,32 +156,20 @@ pub async fn run_setup_wizard() -> Result<()> {
 
         if !key.is_empty() {
             cfg.set_api_key(id, key);
+            cfg.default_provider = Some(id.to_string());
             cfg.save()?;
-            ui::print_success(&format!("{} key saved.", name));
+            println!();
+            ui::print_success(&format!("{} key saved. Set as default provider.", name));
+        } else {
+            println!();
+            ui::print_info("Skipped.");
         }
+
         println!();
     }
 
-    // Interactive provider selector
-    let provider_names: Vec<&str> = providers.iter().map(|(id, _, _)| *id).collect();
-    let provider_labels: Vec<String> = providers
-        .iter()
-        .map(|(id, name, _)| format!("{} ({})", name, id))
-        .collect();
-
-    println!("  Select default provider:");
-    println!();
-
-    let current_default = cfg.default_provider.as_deref().unwrap_or("groq");
-    let default_idx = provider_names.iter().position(|&p| p == current_default).unwrap_or(3);
-
-    let selected = ui::select_menu(&provider_labels, default_idx)?;
-
-    cfg.default_provider = Some(provider_names[selected].to_string());
     cfg.save()?;
 
-    println!();
-    ui::print_success(&format!("Default provider: {}", provider_names[selected]));
     println!();
     ui::print_success("Setup complete.");
     println!("  Run 'nion chat' to start.");

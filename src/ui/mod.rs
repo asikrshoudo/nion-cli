@@ -1,11 +1,14 @@
 use anyhow::Result;
 use colored::*;
 use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     style::{Color, Print, ResetColor, SetForegroundColor},
+    terminal::{self, ClearType},
 };
 use indicatif::{ProgressBar, ProgressStyle};
-use std::io::stdout;
+use std::io::{stdout, Write};
 use std::time::Duration;
 
 use crate::config::Config;
@@ -53,8 +56,6 @@ pub async fn startup_animation() {
     )
     .unwrap_or_else(|_| println!("  One tool. Every model. Every platform.\n"));
 }
-
-
 
 pub fn print_response(text: &str) {
     println!("\n{}", "-".repeat(60).bright_black());
@@ -226,13 +227,6 @@ pub fn print_models_list() {
             ],
         ),
         (
-            "OpenAI Codex / Instruct",
-            vec![
-                ("gpt-4o", "Best for coding tasks"),
-                ("o3-mini", "Reasoning + code"),
-            ],
-        ),
-        (
             "Anthropic",
             vec![
                 ("claude-3-5-sonnet-20241022", "Best overall"),
@@ -347,78 +341,83 @@ pub async fn show_update_prompt(new_version: &str) -> Result<()> {
     Ok(())
 }
 
-// ── Add this function to the bottom of src/ui/mod.rs ──────────────────────
-
-pub fn select_menu(options: &[String], default: usize) -> anyhow::Result<usize> {
-    use crossterm::{
-        cursor,
-        event::{self, Event, KeyCode, KeyEventKind},
-        execute,
-        terminal::{self, ClearType},
-    };
-    use std::io::{stdout, Write};
-
-    let mut selected = default;
+pub fn select_menu(options: &[String], default: usize) -> Result<usize> {
+    let mut selected = default.min(options.len().saturating_sub(1));
     let count = options.len();
 
     terminal::enable_raw_mode()?;
+    execute!(stdout(), cursor::Hide)?;
 
-    let print_menu = |sel: usize| -> anyhow::Result<()> {
+    let draw = |sel: usize| -> Result<()> {
         let mut out = stdout();
-        execute!(out, cursor::MoveToColumn(0))?;
         for (i, opt) in options.iter().enumerate() {
-            execute!(out, terminal::Clear(ClearType::CurrentLine))?;
+            execute!(out, terminal::Clear(ClearType::CurrentLine), cursor::MoveToColumn(0))?;
             if i == sel {
                 execute!(
                     out,
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::Cyan),
-                    crossterm::style::Print(format!("  ❯ {}\n", opt)),
-                    crossterm::style::ResetColor
+                    SetForegroundColor(Color::Cyan),
+                    Print(format!("  \u{276f} {}\r\n", opt)),
+                    ResetColor,
                 )?;
             } else {
                 execute!(
                     out,
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey),
-                    crossterm::style::Print(format!("    {}\n", opt)),
-                    crossterm::style::ResetColor
+                    SetForegroundColor(Color::DarkGrey),
+                    Print(format!("    {}\r\n", opt)),
+                    ResetColor,
                 )?;
             }
         }
+        // hint line
+        execute!(
+            out,
+            terminal::Clear(ClearType::CurrentLine),
+            cursor::MoveToColumn(0),
+            SetForegroundColor(Color::DarkGrey),
+            Print("  \u{2191}\u{2193} move   Enter select"),
+            ResetColor,
+        )?;
         out.flush()?;
         Ok(())
     };
 
-    print_menu(selected)?;
+    draw(selected)?;
 
     loop {
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
+            let prev = selected;
             match key.code {
                 KeyCode::Up => {
-                    if selected > 0 {
-                        selected -= 1;
-                    } else {
-                        selected = count - 1;
-                    }
+                    selected = if selected == 0 { count - 1 } else { selected - 1 };
                 }
                 KeyCode::Down => {
-                    if selected < count - 1 {
-                        selected += 1;
-                    } else {
-                        selected = 0;
-                    }
+                    selected = if selected == count - 1 { 0 } else { selected + 1 };
                 }
                 KeyCode::Enter => break,
-                KeyCode::Esc | KeyCode::Char('q') => break,
-                _ => {}
+                KeyCode::Esc => break,
+                _ => continue,
             }
-            // Move cursor up to redraw
-            execute!(stdout(), cursor::MoveUp(count as u16))?;
-            print_menu(selected)?;
+            if selected != prev {
+                execute!(stdout(), cursor::MoveUp((count + 1) as u16))?;
+                draw(selected)?;
+            }
         }
     }
+
+    // Clear menu
+    execute!(stdout(), cursor::MoveUp((count + 1) as u16))?;
+    for _ in 0..(count + 1) {
+        execute!(
+            stdout(),
+            terminal::Clear(ClearType::CurrentLine),
+            cursor::MoveToColumn(0),
+            Print("\r\n"),
+        )?;
+    }
+    execute!(stdout(), cursor::MoveUp((count + 1) as u16), cursor::Show)?;
 
     terminal::disable_raw_mode()?;
     println!();
