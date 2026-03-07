@@ -82,14 +82,8 @@ pub async fn run_first_time_setup() -> Result<()> {
 
     let display_name = cfg.user_name.as_deref().unwrap_or("User");
     println!();
-    ui::print_success(&format!(
-        "Hello, {}. Your name has been saved.",
-        display_name
-    ));
+    ui::print_success(&format!("Hello, {}. Your name has been saved.", display_name));
     println!();
-
-    // FIX: removed duplicate wizard call here.
-    // Setup wizard only runs when user explicitly calls `nion config setup`.
     println!("  Run 'nion config setup' to add your API keys.");
     println!();
 
@@ -108,24 +102,16 @@ pub async fn run_setup_wizard() -> Result<()> {
     let mut cfg = Config::load()?;
 
     let providers: Vec<(&str, &str, &str)> = vec![
-        ("openai", "OpenAI", "https://platform.openai.com/api-keys"),
-        ("anthropic", "Anthropic", "https://console.anthropic.com"),
-        ("google", "Google", "https://aistudio.google.com/app/apikey"),
-        (
-            "groq",
-            "Groq",
-            "https://console.groq.com  [free tier available]",
-        ),
-        ("grok", "xAI Grok", "https://console.x.ai"),
-        ("deepseek", "DeepSeek", "https://platform.deepseek.com"),
-        ("mistral", "Mistral", "https://console.mistral.ai"),
-        (
-            "perplexity",
-            "Perplexity",
-            "https://www.perplexity.ai/settings/api",
-        ),
-        ("together", "Together AI", "https://api.together.ai"),
-        ("cohere", "Cohere", "https://dashboard.cohere.com/api-keys"),
+        ("openai",     "OpenAI",      "https://platform.openai.com/api-keys"),
+        ("anthropic",  "Anthropic",   "https://console.anthropic.com"),
+        ("google",     "Google",      "https://aistudio.google.com/app/apikey"),
+        ("groq",       "Groq",        "https://console.groq.com  [free tier available]"),
+        ("grok",       "xAI Grok",    "https://console.x.ai"),
+        ("deepseek",   "DeepSeek",    "https://platform.deepseek.com"),
+        ("mistral",    "Mistral",     "https://console.mistral.ai"),
+        ("perplexity", "Perplexity",  "https://www.perplexity.ai/settings/api"),
+        ("together",   "Together AI", "https://api.together.ai"),
+        ("cohere",     "Cohere",      "https://dashboard.cohere.com/api-keys"),
     ];
 
     for (id, name, url) in &providers {
@@ -145,20 +131,26 @@ pub async fn run_setup_wizard() -> Result<()> {
         println!();
     }
 
-    print!("  Default provider [groq]: ");
-    io::stdout().flush()?;
-    let mut provider = String::new();
-    io::stdin().read_line(&mut provider)?;
-    let provider = provider.trim();
+    // Interactive provider selector
+    let provider_names: Vec<&str> = providers.iter().map(|(id, _, _)| *id).collect();
+    let provider_labels: Vec<String> = providers
+        .iter()
+        .map(|(id, name, _)| format!("{} ({})", name, id))
+        .collect();
 
-    cfg.default_provider = Some(if provider.is_empty() {
-        "groq".to_string()
-    } else {
-        provider.to_string()
-    });
+    println!("  Select default provider:");
+    println!();
 
+    let current_default = cfg.default_provider.as_deref().unwrap_or("groq");
+    let default_idx = provider_names.iter().position(|&p| p == current_default).unwrap_or(3);
+
+    let selected = ui::select_menu(&provider_labels, default_idx)?;
+
+    cfg.default_provider = Some(provider_names[selected].to_string());
     cfg.save()?;
 
+    println!();
+    ui::print_success(&format!("Default provider: {}", provider_names[selected]));
     println!();
     ui::print_success("Setup complete.");
     println!("  Run 'nion chat' to start.");

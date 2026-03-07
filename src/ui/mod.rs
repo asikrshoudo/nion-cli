@@ -346,3 +346,81 @@ pub async fn show_update_prompt(new_version: &str) -> Result<()> {
 
     Ok(())
 }
+
+// ── Add this function to the bottom of src/ui/mod.rs ──────────────────────
+
+pub fn select_menu(options: &[String], default: usize) -> anyhow::Result<usize> {
+    use crossterm::{
+        cursor,
+        event::{self, Event, KeyCode, KeyEventKind},
+        execute,
+        terminal::{self, ClearType},
+    };
+    use std::io::{stdout, Write};
+
+    let mut selected = default;
+    let count = options.len();
+
+    terminal::enable_raw_mode()?;
+
+    let print_menu = |sel: usize| -> anyhow::Result<()> {
+        let mut out = stdout();
+        execute!(out, cursor::MoveToColumn(0))?;
+        for (i, opt) in options.iter().enumerate() {
+            execute!(out, terminal::Clear(ClearType::CurrentLine))?;
+            if i == sel {
+                execute!(
+                    out,
+                    crossterm::style::SetForegroundColor(crossterm::style::Color::Cyan),
+                    crossterm::style::Print(format!("  ❯ {}\n", opt)),
+                    crossterm::style::ResetColor
+                )?;
+            } else {
+                execute!(
+                    out,
+                    crossterm::style::SetForegroundColor(crossterm::style::Color::DarkGrey),
+                    crossterm::style::Print(format!("    {}\n", opt)),
+                    crossterm::style::ResetColor
+                )?;
+            }
+        }
+        out.flush()?;
+        Ok(())
+    };
+
+    print_menu(selected)?;
+
+    loop {
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Up => {
+                    if selected > 0 {
+                        selected -= 1;
+                    } else {
+                        selected = count - 1;
+                    }
+                }
+                KeyCode::Down => {
+                    if selected < count - 1 {
+                        selected += 1;
+                    } else {
+                        selected = 0;
+                    }
+                }
+                KeyCode::Enter => break,
+                KeyCode::Esc | KeyCode::Char('q') => break,
+                _ => {}
+            }
+            // Move cursor up to redraw
+            execute!(stdout(), cursor::MoveUp(count as u16))?;
+            print_menu(selected)?;
+        }
+    }
+
+    terminal::disable_raw_mode()?;
+    println!();
+    Ok(selected)
+}
