@@ -1,6 +1,6 @@
 [package]
 name = "nion"
-version = "0.1.0"
+version = "0.1.3"
 edition = "2021"
 authors = ["Asik R Shoudo"]
 description = "Nion - The Universal AI CLI. One tool, every model, every platform."

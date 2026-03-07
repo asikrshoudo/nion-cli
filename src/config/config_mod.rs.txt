@@ -88,20 +88,10 @@ pub async fn run_first_time_setup() -> Result<()> {
     ));
     println!();
 
-    print!("  Would you like to add your API keys now? [Y/n] ");
-    io::stdout().flush()?;
-
-    let mut choice = String::new();
-    io::stdin().read_line(&mut choice)?;
-    let choice = choice.trim().to_lowercase();
-
-    if choice.is_empty() || choice == "y" || choice == "yes" {
-        run_setup_wizard().await?;
-    } else {
-        println!();
-        println!("  You can add keys later with: nion config setup");
-        println!();
-    }
+    // FIX: removed duplicate wizard call here.
+    // Setup wizard only runs when user explicitly calls `nion config setup`.
+    println!("  Run 'nion config setup' to add your API keys.");
+    println!();
 
     Ok(())
 }
@@ -149,6 +139,7 @@ pub async fn run_setup_wizard() -> Result<()> {
 
         if !key.is_empty() {
             cfg.set_api_key(id, key);
+            cfg.save()?;
             ui::print_success(&format!("{} key saved.", name));
         }
         println!();
