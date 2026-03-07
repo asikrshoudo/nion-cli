@@ -21,48 +21,36 @@ impl AnthropicProvider {
                 .unwrap(),
         }
     }
-}
 
-#[derive(Serialize)]
-struct AnthropicRequest {
-    model: String,
-    max_tokens: u32,
-    messages: Vec<AnthropicMessage>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct AnthropicMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct AnthropicResponse {
-    content: Vec<ContentBlock>,
-}
-
-#[derive(Deserialize)]
-struct ContentBlock {
-    #[serde(rename = "type")]
-    block_type: String,
-    text: Option<String>,
-}
-
-#[async_trait]
-impl Provider for AnthropicProvider {
-    async fn complete(&self, messages: &[Message], model: &str) -> Result<String> {
+    async fn complete_inner(
+        &self,
+        messages: &[Message],
+        model: &str,
+        system: Option<&str>,
+    ) -> Result<String> {
         let anthropic_messages: Vec<AnthropicMessage> = messages
             .iter()
+            .filter(|m| m.role != "system") // strip any system messages
             .map(|m| AnthropicMessage {
                 role: m.role.clone(),
                 content: m.content.clone(),
             })
             .collect();
 
-        let req = AnthropicRequest {
+        #[derive(Serialize)]
+        struct Req {
+            model: String,
+            max_tokens: u32,
+            messages: Vec<AnthropicMessage>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            system: Option<String>,
+        }
+
+        let req = Req {
             model: model.to_string(),
-            max_tokens: 4096,
+            max_tokens: 8192,
             messages: anthropic_messages,
+            system: system.map(String::from),
         };
 
         let resp = self
@@ -89,8 +77,41 @@ impl Provider for AnthropicProvider {
             .filter_map(|b| b.text.clone())
             .collect::<Vec<_>>()
             .join("");
-
         Ok(text)
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct AnthropicMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct AnthropicResponse {
+    content: Vec<ContentBlock>,
+}
+
+#[derive(Deserialize)]
+struct ContentBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    text: Option<String>,
+}
+
+#[async_trait]
+impl Provider for AnthropicProvider {
+    async fn complete(&self, messages: &[Message], model: &str) -> Result<String> {
+        self.complete_inner(messages, model, None).await
+    }
+
+    async fn complete_with_system(
+        &self,
+        messages: &[Message],
+        model: &str,
+        system: &str,
+    ) -> Result<String> {
+        self.complete_inner(messages, model, Some(system)).await
     }
 
     fn name(&self) -> &str {

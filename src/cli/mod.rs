@@ -1,50 +1,59 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use crate::{config, providers, session, ui};
+use crate::{config, providers, ui};
 
 #[derive(Parser)]
-#[command(
-    name = "nion",
-    about = "Nion -- The Universal AI CLI\nOne tool. Every model. Every platform.",
-    version,
-    propagate_version = true,
-    after_help = "Examples:\n  nion ask \"What is Rust?\"\n  nion ask -p gemini \"Explain transformers\"\n  nion chat\n  nion chat -p groq -m llama-3.3-70b-versatile\n  nion config setup\n\nProviders:\n  openai  anthropic  google  groq  grok  deepseek  mistral  perplexity  together  cohere"
-)]
+#[command(name = "nion", about = "The Universal AI CLI", version)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Ask a single question
-    Ask {
-        #[arg(required = true, num_args = 1..)]
-        question: Vec<String>,
-        /// Provider (openai, anthropic, google, groq, grok, deepseek, mistral, perplexity, together, cohere)
-        #[arg(short, long)]
-        provider: Option<String>,
-        /// Model name
-        #[arg(short, long)]
-        model: Option<String>,
-    },
-
-    /// Start an interactive multi-turn chat session
+    /// Start an interactive chat session
     Chat {
+        /// Provider to use (openai, anthropic, google, groq, grok, deepseek, mistral, perplexity, together, cohere)
         #[arg(short, long)]
         provider: Option<String>,
+        /// Model to use
         #[arg(short, long)]
         model: Option<String>,
     },
 
-    /// Manage configuration and API keys
+    /// Start an agentic session — AI can read/write files and run commands
+    Agent {
+        /// Provider to use
+        #[arg(short, long)]
+        provider: Option<String>,
+        /// Model to use
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+
+    /// Ask a single question and get a response
+    Ask {
+        /// The question to ask
+        question: Vec<String>,
+        /// Provider to use
+        #[arg(short, long)]
+        provider: Option<String>,
+        /// Model to use
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+
+    /// Configuration commands
     Config {
         #[command(subcommand)]
         action: ConfigAction,
     },
 
-    /// Check for and install updates
+    /// List all available models
+    Models,
+
+    /// Check for and apply updates
     Update,
 }
 
@@ -52,97 +61,98 @@ enum Commands {
 enum ConfigAction {
     /// Interactive setup wizard
     Setup,
-    /// Set an API key  e.g. nion config set-key groq YOUR_KEY
-    SetKey { provider: String, key: String },
-    /// Set default provider
-    SetProvider { provider: String },
-    /// Set default model
-    SetModel { model: String },
-    /// Set or change your name
-    SetName { name: String },
-    /// Show current config
+    /// Set an API key: nion config set-key <provider> <key>
+    SetKey {
+        provider: String,
+        key: String,
+    },
+    /// Show current configuration
     Show,
-    /// List all available models
-    ListModels,
 }
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Ask {
-            question,
-            provider,
-            model,
-        } => ask_command(&question.join(" "), provider.as_deref(), model.as_deref()).await,
-        Commands::Chat { provider, model } => {
-            chat_command(provider.as_deref(), model.as_deref()).await
+        None | Some(Commands::Chat { provider: None, model: None }) => {
+            run_chat(None, None).await?;
         }
-        Commands::Config { action } => config_command(action).await,
-        Commands::Update => crate::updater::force_update().await,
+
+        Some(Commands::Chat { provider, model }) => {
+            run_chat(provider.as_deref(), model.as_deref()).await?;
+        }
+
+        Some(Commands::Agent { provider, model }) => {
+            crate::agent::run(provider.as_deref(), model.as_deref()).await?;
+        }
+
+        Some(Commands::Ask { question, provider, model }) => {
+            let q = question.join(" ");
+            if q.trim().is_empty() {
+                ui::print_error("Please provide a question. Example: nion ask \"Hello\"");
+                return Ok(());
+            }
+            run_ask(&q, provider.as_deref(), model.as_deref()).await?;
+        }
+
+        Some(Commands::Config { action }) => match action {
+            ConfigAction::Setup => {
+                config::run_setup_wizard().await?;
+            }
+            ConfigAction::SetKey { provider, key } => {
+                let mut cfg = config::Config::load()?;
+                cfg.set_api_key(&provider, &key);
+                if cfg.default_provider.is_none() {
+                    cfg.default_provider = Some(provider.clone());
+                }
+                cfg.save()?;
+                ui::print_success(&format!("{} API key saved.", provider));
+            }
+            ConfigAction::Show => {
+                let cfg = config::Config::load()?;
+                ui::print_config(&cfg);
+            }
+        },
+
+        Some(Commands::Models) => {
+            ui::print_models_list();
+        }
+
+        Some(Commands::Update) => {
+            crate::updater::force_update().await?;
+        }
     }
+
+    Ok(())
 }
 
-async fn ask_command(
-    question: &str,
-    provider_name: Option<&str>,
-    model: Option<&str>,
-) -> Result<()> {
+async fn run_chat(provider_name: Option<&str>, model_override: Option<&str>) -> Result<()> {
+    use crate::session::Message;
+
     let cfg = config::Config::load()?;
 
-    let provider_name = provider_name
+    let provider_id = provider_name
         .map(String::from)
         .or_else(|| cfg.default_provider.clone())
         .unwrap_or_else(|| "groq".to_string());
 
-    let provider = providers::get_provider(&provider_name, &cfg)?;
+    let provider = providers::get_provider(&provider_id, &cfg)?;
 
-    let model = model
+    let model = model_override
         .map(String::from)
         .or_else(|| cfg.default_model.clone())
         .unwrap_or_else(|| provider.default_model().to_string());
 
-    let messages = vec![session::Message::user(question)];
+    let mut history: Vec<Message> = Vec::new();
+    let mut current_provider_id = provider_id.clone();
+    let mut current_model = model.clone();
 
-    let spinner = ui::start_spinner(&format!("Thinking  {}  {}", provider.name(), model));
-    let response = provider.complete(&messages, &model).await;
-    spinner.finish_and_clear();
-
-    match response {
-        Ok(text) => {
-            ui::print_response(&text);
-            Ok(())
-        }
-        Err(e) => Err(e),
-    }
-}
-
-async fn chat_command(provider_name: Option<&str>, model: Option<&str>) -> Result<()> {
-    let cfg = config::Config::load()?;
-
-    let provider_name = provider_name
-        .map(String::from)
-        .or_else(|| cfg.default_provider.clone())
-        .unwrap_or_else(|| "groq".to_string());
-
-    let provider = providers::get_provider(&provider_name, &cfg)?;
-
-    let model = model
-        .map(String::from)
-        .or_else(|| cfg.default_model.clone())
-        .unwrap_or_else(|| provider.default_model().to_string());
-
-    let mut current_provider_name = provider_name;
-    let mut current_model = model;
-    let mut history: Vec<session::Message> = Vec::new();
-    let mut cfg = cfg;
-
-    ui::print_chat_header(&cfg, &current_provider_name, &current_model);
+    ui::print_chat_header(&cfg, &current_provider_id, &current_model);
 
     loop {
         let name = cfg.user_name.as_deref().unwrap_or("You");
         let input = match ui::read_user_input(name) {
-            Ok(i) => i,
+            Ok(s) => s,
             Err(_) => break,
         };
 
@@ -150,88 +160,84 @@ async fn chat_command(provider_name: Option<&str>, model: Option<&str>) -> Resul
             continue;
         }
 
-        let lower = input.trim().to_lowercase();
-
-        if lower == "/exit" || lower == "/quit" {
-            let n = cfg.user_name.as_deref().unwrap_or("User");
-            ui::print_goodbye(n);
-            break;
-        }
-
-        if lower == "/clear" {
-            history.clear();
-            ui::print_info("History cleared.");
-            continue;
-        }
-
-        if lower == "/help" {
-            ui::print_chat_help();
-            continue;
-        }
-
-        if lower.starts_with("/model ") {
-            let new_model = input.trim()[7..].trim().to_string();
-            if new_model.is_empty() {
-                ui::print_error("Usage: /model <model-name>");
-            } else {
-                current_model = new_model;
-                ui::print_info(&format!("Model: {}", current_model));
-            }
-            continue;
-        }
-
-        if lower.starts_with("/switch ") {
-            let new_provider = input.trim()[8..].trim().to_string();
-            match providers::get_provider(&new_provider, &cfg) {
-                Ok(p) => {
-                    current_model = p.default_model().to_string();
-                    current_provider_name = new_provider;
-                    history.clear();
-                    ui::print_info(&format!(
-                        "Switched to {} ({}). History cleared.",
-                        current_provider_name, current_model
-                    ));
+        // Handle commands
+        if input.starts_with('/') {
+            let parts: Vec<&str> = input.splitn(2, ' ').collect();
+            match parts[0] {
+                "/exit" | "/quit" => {
+                    ui::print_goodbye(cfg.user_name.as_deref().unwrap_or("User"));
+                    break;
                 }
-                Err(e) => ui::print_error(&format!("{}", e)),
+                "/clear" => {
+                    history.clear();
+                    ui::print_info("History cleared.");
+                    continue;
+                }
+                "/help" => {
+                    ui::print_chat_help();
+                    continue;
+                }
+                "/model" => {
+                    if let Some(m) = parts.get(1) {
+                        current_model = m.trim().to_string();
+                        ui::print_info(&format!("Model switched to: {}", current_model));
+                    } else {
+                        ui::print_error("Usage: /model <model-name>");
+                    }
+                    continue;
+                }
+                "/switch" => {
+                    if let Some(p) = parts.get(1) {
+                        let pid = p.trim().to_string();
+                        match providers::get_provider(&pid, &cfg) {
+                            Ok(new_p) => {
+                                current_provider_id = pid;
+                                current_model = new_p.default_model().to_string();
+                                ui::print_info(&format!(
+                                    "Switched to {} ({})",
+                                    current_provider_id, current_model
+                                ));
+                            }
+                            Err(e) => ui::print_error(&format!("{}", e)),
+                        }
+                    } else {
+                        ui::print_error("Usage: /switch <provider>");
+                    }
+                    continue;
+                }
+                "/name" => {
+                    if let Some(new_name) = parts.get(1) {
+                        let mut c = config::Config::load()?;
+                        c.user_name = Some(new_name.trim().to_string());
+                        c.save()?;
+                        ui::print_info(&format!("Name updated to: {}", new_name.trim()));
+                    } else {
+                        ui::print_error("Usage: /name <new_name>");
+                    }
+                    continue;
+                }
+                _ => {
+                    ui::print_error(&format!("Unknown command: {}. Type /help for help.", parts[0]));
+                    continue;
+                }
             }
-            continue;
         }
 
-        if lower.starts_with("/name ") {
-            let new_name = input.trim()[6..].trim().to_string();
-            if new_name.is_empty() {
-                ui::print_error("Usage: /name <your-name>");
-            } else {
-                cfg.user_name = Some(new_name.clone());
-                cfg.save()?;
-                ui::print_success(&format!("Name updated to: {}", new_name));
-            }
-            continue;
-        }
+        history.push(Message::user(&input));
 
-        history.push(session::Message::user(&input));
-
-        let provider = match providers::get_provider(&current_provider_name, &cfg) {
-            Ok(p) => p,
-            Err(e) => {
-                ui::print_error(&format!("{}", e));
-                history.pop();
-                continue;
-            }
-        };
-
+        let p = providers::get_provider(&current_provider_id, &cfg)?;
         let spinner = ui::start_spinner("Thinking...");
-        let response = provider.complete(&history, &current_model).await;
+        let result = p.complete(&history, &current_model).await;
         spinner.finish_and_clear();
 
-        match response {
-            Ok(text) => {
-                history.push(session::Message::assistant(&text));
-                ui::print_response(&text);
+        match result {
+            Ok(response) => {
+                history.push(Message::assistant(&response));
+                ui::print_response(&response);
             }
             Err(e) => {
-                history.pop();
                 ui::print_error(&format!("{}", e));
+                history.pop();
             }
         }
     }
@@ -239,42 +245,33 @@ async fn chat_command(provider_name: Option<&str>, model: Option<&str>) -> Resul
     Ok(())
 }
 
-async fn config_command(action: ConfigAction) -> Result<()> {
-    match action {
-        ConfigAction::Setup => {
-            config::run_setup_wizard().await?;
-        }
-        ConfigAction::SetKey { provider, key } => {
-            let mut cfg = config::Config::load()?;
-            cfg.set_api_key(&provider, &key);
-            cfg.save()?;
-            ui::print_success(&format!("Key for '{}' saved.", provider));
-        }
-        ConfigAction::SetProvider { provider } => {
-            let mut cfg = config::Config::load()?;
-            cfg.default_provider = Some(provider.clone());
-            cfg.save()?;
-            ui::print_success(&format!("Default provider: {}", provider));
-        }
-        ConfigAction::SetModel { model } => {
-            let mut cfg = config::Config::load()?;
-            cfg.default_model = Some(model.clone());
-            cfg.save()?;
-            ui::print_success(&format!("Default model: {}", model));
-        }
-        ConfigAction::SetName { name } => {
-            let mut cfg = config::Config::load()?;
-            cfg.user_name = Some(name.clone());
-            cfg.save()?;
-            ui::print_success(&format!("Name updated to: {}", name));
-        }
-        ConfigAction::Show => {
-            let cfg = config::Config::load()?;
-            ui::print_config(&cfg);
-        }
-        ConfigAction::ListModels => {
-            ui::print_models_list();
-        }
+async fn run_ask(question: &str, provider_name: Option<&str>, model_override: Option<&str>) -> Result<()> {
+    use crate::session::Message;
+
+    let cfg = config::Config::load()?;
+
+    let provider_id = provider_name
+        .map(String::from)
+        .or_else(|| cfg.default_provider.clone())
+        .unwrap_or_else(|| "groq".to_string());
+
+    let provider = providers::get_provider(&provider_id, &cfg)?;
+
+    let model = model_override
+        .map(String::from)
+        .or_else(|| cfg.default_model.clone())
+        .unwrap_or_else(|| provider.default_model().to_string());
+
+    let messages = vec![Message::user(question)];
+
+    let spinner = ui::start_spinner("Thinking...");
+    let result = provider.complete(&messages, &model).await;
+    spinner.finish_and_clear();
+
+    match result {
+        Ok(response) => ui::print_response(&response),
+        Err(e) => ui::print_error(&format!("{}", e)),
     }
+
     Ok(())
 }

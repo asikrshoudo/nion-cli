@@ -21,13 +21,63 @@ impl CohereProvider {
                 .unwrap(),
         }
     }
-}
 
-#[derive(Serialize)]
-struct ChatRequest {
-    model: String,
-    messages: Vec<CohereMessage>,
-    max_tokens: u32,
+    async fn complete_inner(
+        &self,
+        messages: &[Message],
+        model: &str,
+        system: Option<&str>,
+    ) -> Result<String> {
+        #[derive(Serialize)]
+        struct Req {
+            model: String,
+            messages: Vec<CohereMessage>,
+            max_tokens: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            system: Option<String>,
+        }
+
+        let co_messages: Vec<CohereMessage> = messages
+            .iter()
+            .filter(|m| m.role != "system")
+            .map(|m| CohereMessage {
+                role: m.role.clone(),
+                content: m.content.clone(),
+            })
+            .collect();
+
+        let req = Req {
+            model: model.to_string(),
+            messages: co_messages,
+            max_tokens: 4096,
+            system: system.map(String::from),
+        };
+
+        let resp = self
+            .client
+            .post("https://api.cohere.com/v2/chat")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&req)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let err_text = resp.text().await?;
+            anyhow::bail!("Cohere API error ({}): {}", status, err_text);
+        }
+
+        let data: ChatResponse = resp.json().await?;
+        let text = data
+            .message
+            .content
+            .iter()
+            .filter_map(|b| b.text.clone())
+            .collect::<Vec<_>>()
+            .join("");
+        Ok(text)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -54,56 +104,20 @@ struct ContentBlock {
 #[async_trait]
 impl Provider for CohereProvider {
     async fn complete(&self, messages: &[Message], model: &str) -> Result<String> {
-        // Cohere v2 API uses user/assistant roles
-        let co_messages: Vec<CohereMessage> = messages
-            .iter()
-            .map(|m| CohereMessage {
-                role: m.role.clone(),
-                content: m.content.clone(),
-            })
-            .collect();
-
-        let req = ChatRequest {
-            model: model.to_string(),
-            messages: co_messages,
-            max_tokens: 4096,
-        };
-
-        let resp = self
-            .client
-            .post("https://api.cohere.com/v2/chat")
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&req)
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let err_text = resp.text().await?;
-            anyhow::bail!("Cohere API error ({}): {}", status, err_text);
-        }
-
-        let data: ChatResponse = resp.json().await?;
-        let text = data
-            .message
-            .content
-            .iter()
-            .filter_map(|b| b.text.clone())
-            .collect::<Vec<_>>()
-            .join("");
-
-        Ok(text)
+        self.complete_inner(messages, model, None).await
     }
 
-    fn name(&self) -> &str {
-        "cohere"
+    async fn complete_with_system(
+        &self,
+        messages: &[Message],
+        model: &str,
+        system: &str,
+    ) -> Result<String> {
+        self.complete_inner(messages, model, Some(system)).await
     }
 
-    fn default_model(&self) -> &str {
-        "command-r-plus-08-2024"
-    }
-
+    fn name(&self) -> &str { "cohere" }
+    fn default_model(&self) -> &str { "command-r-plus-08-2024" }
     fn available_models(&self) -> Vec<String> {
         vec![
             "command-r-plus-08-2024".into(),

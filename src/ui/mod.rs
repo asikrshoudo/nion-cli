@@ -385,7 +385,12 @@ pub fn select_menu(options: &[String], default: usize) -> Result<usize> {
 
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-        let trimmed = input.trim();
+        // Strip ANSI escape sequences (e.g. arrow keys ^[[A ^[[B)
+        let trimmed: String = input
+            .chars()
+            .filter(|c| c.is_ascii_digit() || c.is_whitespace())
+            .collect();
+        let trimmed = trimmed.trim();
 
         if trimmed.is_empty() {
             return Ok(default);
@@ -450,4 +455,53 @@ fn box_row(text: &str, width: usize) {
         format!("{:<width$}", text, width = width - 2).white(),
         "│".bright_black()
     );
+}
+
+pub fn print_agent_header(cfg: &Config, provider: &str, model: &str) {
+    let name = cfg.user_name.as_deref().unwrap_or("User");
+    println!();
+    box_line_top(64);
+    println!(
+        "{}{}{}",
+        "│".bright_black(),
+        format!(
+            "  {} Agent   {}  {}   {}",
+            "\u{26a1}",
+            "Provider:".bright_black(),
+            provider.bright_cyan().bold(),
+            model.bright_black()
+        ),
+        "│".bright_black()
+    );
+    println!(
+        "{}{}{}",
+        "│".bright_black(),
+        format!("  Hello, {}  —  I can read/write files and run commands.", name)
+            .bright_black(),
+        "│".bright_black()
+    );
+    box_line_bot(64);
+    println!(
+        "  {}",
+        "Commands:  /exit  /clear  /help".bright_black()
+    );
+    println!();
+}
+
+pub fn print_agent_help() {
+    println!("\n  {}", "Nion Agent".bright_yellow().bold());
+    println!("{}", "─".repeat(60).bright_black());
+    println!("  I can read files, write files, list directories, and run commands.");
+    println!();
+    println!("  {}", "Examples:".bright_black());
+    println!("    create a snake game in snake.py");
+    println!("    read main.rs and add error handling");
+    println!("    list all files and summarize the project");
+    println!("    run pytest and fix any failing tests");
+    println!();
+    println!("  {}", "Commands:".bright_black());
+    println!("    {}   exit the session", "/exit".cyan());
+    println!("    {}  clear history", "/clear".cyan());
+    println!("    {}   show this help", "/help".cyan());
+    println!();
 }
