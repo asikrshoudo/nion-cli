@@ -1,0 +1,36 @@
+[package]
+name = "nion"
+version = "0.1.0"
+edition = "2021"
+authors = ["Asik R Shoudo"]
+description = "Nion - The Universal AI CLI. One tool, every model, every platform."
+license = "AGPL-3.0"
+repository = "https://github.com/asikrshoudo/nion-cli"
+homepage = "https://github.com/asikrshoudo/nion-cli"
+keywords = ["ai", "cli", "openai", "claude", "gemini"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "nion"
+path = "src/main.rs"
+
+[dependencies]
+clap         = { version = "4",    features = ["derive", "color"] }
+tokio        = { version = "1",    features = ["full"] }
+reqwest      = { version = "0.12", features = ["json", "stream"] }
+serde        = { version = "1",    features = ["derive"] }
+serde_json   = "1"
+toml         = "0.8"
+dirs         = "5"
+colored      = "2"
+indicatif    = "0.17"
+async-trait  = "0.1"
+anyhow       = "1"
+semver       = "1"
+crossterm    = "0.27"
+
+[profile.release]
+opt-level       = 3
+lto             = true
+codegen-units   = 1
+strip           = true
