@@ -16,21 +16,40 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux x86_64 — static musl, works on every Linux distro
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             binary: nion-x86_64-linux
+            android: false
+            windows: false
 
+          # Android ARM64 — Termux (Bionic libc, needs Android NDK)
           - os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
+            target: aarch64-linux-android
             binary: nion-aarch64-linux
+            android: true
+            windows: false
 
+          # macOS Intel
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: nion-x86_64-macos
+            android: false
+            windows: false
 
+          # macOS Apple Silicon M1/M2/M3
           - os: macos-latest
             target: aarch64-apple-darwin
             binary: nion-aarch64-macos
+            android: false
+            windows: false
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: nion-x86_64-windows.exe
+            android: false
+            windows: true
 
     steps:
       - name: Checkout
@@ -52,25 +71,41 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-
 
+      # musl tools for static Linux binary
       - name: Install musl-tools (Linux x86_64)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y musl-tools
 
-      - name: Install ARM64 cross-linker (Linux ARM64)
-        if: matrix.target == 'aarch64-unknown-linux-musl'
+      # Android NDK for Termux binary
+      - name: Setup Android NDK (Termux)
+        if: matrix.android == true
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: true
+
+      - name: Configure Android linker (Termux)
+        if: matrix.android == true
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          NDK_HOME="${{ steps.setup-ndk.outputs.ndk-path }}"
+          TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android35-clang" >> $GITHUB_ENV
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android35-clang" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> $GITHUB_ENV
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Copy binary
+      - name: Copy binary (Unix/Android)
+        if: matrix.windows == false
         run: cp target/${{ matrix.target }}/release/nion ${{ matrix.binary }}
+
+      - name: Copy binary (Windows)
+        if: matrix.windows == true
+        run: cp target/${{ matrix.target }}/release/nion.exe ${{ matrix.binary }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -93,8 +128,12 @@ jobs:
           path: binaries/
           merge-multiple: true
 
-      - name: Make binaries executable
-        run: chmod +x binaries/*
+      - name: Make Unix binaries executable
+        run: |
+          chmod +x binaries/nion-x86_64-linux
+          chmod +x binaries/nion-aarch64-linux
+          chmod +x binaries/nion-x86_64-macos
+          chmod +x binaries/nion-aarch64-macos
 
       - name: Get tag version
         id: version
@@ -117,9 +156,10 @@ jobs:
             | Platform | Binary |
             |----------|--------|
             | Linux x86_64 | `nion-x86_64-linux` |
-            | Linux ARM64 / Android Termux | `nion-aarch64-linux` |
+            | Android ARM64 (Termux) | `nion-aarch64-linux` |
             | macOS Intel | `nion-x86_64-macos` |
             | macOS Apple Silicon | `nion-aarch64-macos` |
+            | Windows x86_64 | `nion-x86_64-windows.exe` |
 
             ### Quick start
             ```
