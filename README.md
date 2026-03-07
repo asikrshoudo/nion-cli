@@ -1,229 +1,400 @@
-# ⚡ Nion CLI
+# nion-cli
 
-> **The Universal AI CLI — One tool. Every model. Every platform.**
+**The Universal AI CLI — One tool. Every model. Every platform.**
 
-[![CI](https://github.com/asikrshoudo/nion-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/asikrshoudo/nion-cli/actions/workflows/ci.yml)
-[![Release](https://github.com/asikrshoudo/nion-cli/actions/workflows/release.yml/badge.svg)](https://github.com/asikrshoudo/nion-cli/releases)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-%23CE4A00.svg?logo=rust)](https://www.rust-lang.org)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Android-brightgreen)]()
-
-```
-  ███╗   ██╗██╗ ██████╗ ███╗   ██╗
-  ████╗  ██║██║██╔═══██╗████╗  ██║
-  ██╔██╗ ██║██║██║   ██║██╔██╗ ██║
-  ██║╚██╗██║██║██║   ██║██║╚██╗██║
-  ██║ ╚████║██║╚██████╔╝██║ ╚████║
-  ╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
-  ⚡ The Universal AI CLI
-  One tool. Every model. Every platform.
-```
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/asikrshoudo/nion-cli)](https://github.com/asikrshoudo/nion-cli/releases)
+[![npm](https://img.shields.io/npm/v/nion-cli)](https://www.npmjs.com/package/nion-cli)
 
 ---
 
-## Why Nion?
+Most people who use AI from the terminal end up juggling multiple tools — one for OpenAI, another for Claude, a script for Groq. Every new provider means a new setup. Nion solves that by being a single binary that connects to all of them through one consistent interface.
 
-Most AI CLI tools lock you into one provider. **Nion doesn't.**
+You configure your keys once, pick a default provider, and from that point on `nion chat` just works — whether you are on your laptop, a remote Linux server, or an Android phone running Termux. There is also an agent mode where the AI can autonomously read and write files and run shell commands, similar to Claude Code or Gemini CLI.
 
-Connect to **OpenAI**, **Claude**, **Gemini**, **Groq**, and **Grok** — all from one tool, one config, one command. Built in Rust for maximum speed and a single zero-dependency binary.
-
-| Feature | Nion |
-|---------|------|
-| 🦀 Language | Rust (fast, tiny binary) |
-| 🌍 Platforms | Linux, macOS, Windows, Android (Termux) |
-| 🔄 Auto-update | ✅ Notifies on every new GitHub release |
-| 💬 Multi-turn chat | ✅ Full conversation history |
-| ⚡ Groq support | ✅ Free tier, blazing fast |
-| 🔑 Key management | ✅ Simple `~/.nion/config.toml` |
-| 🆓 License | AGPL-3.0 (open source forever) |
+It is written in Rust, so it is fast, produces small self-contained binaries, and has no runtime dependencies. The Android build uses the NDK directly, so it works natively in Termux.
 
 ---
 
-## Install
+## Installation
 
-### ⚡ One-line (Linux / macOS / Android Termux)
+### npm (recommended — works on all platforms)
+
+```bash
+npm install -g nion-cli
+```
+
+This downloads the correct binary for your platform automatically.
+
+### curl (Linux, macOS, Termux)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/asikrshoudo/nion-cli/main/install.sh | bash
 ```
 
-### 📱 Android (Termux) — Build from source
+Then add to PATH if needed:
 
 ```bash
-pkg update && pkg upgrade
-pkg install rust git openssl pkg-config
-git clone https://github.com/asikrshoudo/nion-cli.git
-cd nion-cli
-cargo build --release
-cp target/release/nion $PREFIX/bin/
+export PATH="$HOME/.local/bin:$PATH"
+# Add to ~/.bashrc or ~/.zshrc to make it permanent
 ```
 
-### 🐧 Linux (any distro)
+### Windows
+
+Download the `.exe` from the [Releases page](https://github.com/asikrshoudo/nion-cli/releases/latest) and place it in a folder that is in your PATH.
+
+### Build from source
 
 ```bash
-# Build from source
-git clone https://github.com/asikrshoudo/nion-cli.git
+git clone https://github.com/asikrshoudo/nion-cli
 cd nion-cli
 cargo build --release
-sudo cp target/release/nion /usr/local/bin/
-```
-
-### 🍎 macOS
-
-```bash
-git clone https://github.com/asikrshoudo/nion-cli.git
-cd nion-cli
-cargo build --release
-cp target/release/nion /usr/local/bin/
-```
-
-### 🪟 Windows
-
-```powershell
-# Install Rust from https://rustup.rs first, then:
-git clone https://github.com/asikrshoudo/nion-cli.git
-cd nion-cli
-cargo build --release
-# Binary: target\release\nion.exe — add folder to PATH
+# binary: ./target/release/nion
 ```
 
 ---
 
-## Quick Start
+## First run
 
 ```bash
-# 1. Add your API keys (interactive wizard)
 nion config setup
+```
 
-# 2. Ask a question
-nion ask "What is Rust?"
+This opens an interactive numbered menu. Select a provider, paste your API key, and repeat for any others you want. The last provider you configure becomes your default. If you just want to try things out for free, Groq has a free tier and is very fast.
 
-# 3. Start an interactive chat
+---
+
+## Supported providers
+
+| Provider | ID | Free tier | Get a key |
+|---|---|---|---|
+| OpenAI | `openai` | No | [platform.openai.com](https://platform.openai.com/api-keys) |
+| Anthropic | `anthropic` | No | [console.anthropic.com](https://console.anthropic.com) |
+| Google Gemini | `google` | No | [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| Groq | `groq` | Yes | [console.groq.com](https://console.groq.com) |
+| xAI Grok | `grok` | No | [console.x.ai](https://console.x.ai) |
+| DeepSeek | `deepseek` | No | [platform.deepseek.com](https://platform.deepseek.com) |
+| Mistral | `mistral` | No | [console.mistral.ai](https://console.mistral.ai) |
+| Perplexity | `perplexity` | No | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
+| Together AI | `together` | No | [api.together.ai](https://api.together.ai) |
+| Cohere | `cohere` | No | [dashboard.cohere.com](https://dashboard.cohere.com/api-keys) |
+
+---
+
+## Commands
+
+### `nion chat`
+
+An interactive conversation session with full history. You can switch providers or models mid-session without losing context.
+
+```bash
 nion chat
+nion chat -p anthropic
+nion chat -p groq -m llama-3.3-70b-versatile
+nion chat -p openai -m gpt-4o
+```
+
+In-session commands:
+
+```
+/help                   show available commands
+/exit                   end the session
+/clear                  wipe conversation history
+/model <name>           switch to a different model
+/switch <provider>      switch to a different provider
+/name <name>            change your display name
 ```
 
 ---
 
-## Usage
+### `nion agent`
 
-### `nion ask` — Quick single question
-
-```bash
-nion ask "Explain recursion"
-nion ask -p gemini "Write a haiku about the ocean"
-nion ask -p groq -m llama-3.3-70b-versatile "Write a Python script"
-nion ask -p claude "What are SOLID principles?"
-nion ask -p grok "Explain transformers in AI"
-```
-
-### `nion chat` — Interactive multi-turn chat
+An agentic session where the AI can actually do things on your machine — read files, write files, list directories, and run shell commands. It works in a loop, using tools as needed until the task is complete. Every tool call is shown in real time so you always know what is happening.
 
 ```bash
-nion chat                           # Default provider
-nion chat -p openai                 # GPT-4o
-nion chat -p anthropic              # Claude 3.5 Sonnet
-nion chat -p gemini                 # Gemini 1.5 Pro
-nion chat -p groq                   # Llama 3.3 70B (FREE ⚡)
-nion chat -p grok                   # xAI Grok
-nion chat -p groq -m gemma2-9b-it   # Specific model
+nion agent
+nion agent -p anthropic
+nion agent -p openai -m gpt-4o
 ```
 
-#### In-chat commands
+Available tools:
 
-| Command | What it does |
-|---------|-------------|
-| `/exit` | End the session |
-| `/clear` | Clear conversation history |
-| `/model gpt-4o` | Switch model mid-chat |
-| `/switch groq` | Switch to a different provider |
-| `/help` | Show all commands |
+| Tool | What it does |
+|---|---|
+| `read_file` | Reads any file and shows its content to the AI |
+| `write_file` | Creates or overwrites a file |
+| `list_dir` | Lists files and folders in a directory |
+| `run_command` | Runs a shell command and returns the output |
 
-### `nion config` — Manage settings
+Things you can ask the agent to do:
+
+```
+create a snake game in snake.py and run it
+read main.rs and add proper error handling throughout
+list all files in this project and write a README
+run the test suite and fix whatever is failing
+write a Python script that checks my public IP every hour and logs it
+```
+
+Dangerous commands like `rm -rf /` are blocked regardless of what the AI decides.
+
+In-session commands: `/exit`, `/clear`, `/help`
+
+---
+
+### `nion ask`
+
+A one-shot command. Ask something, get an answer, done. No session, no history. Good for quick lookups and shell scripts.
 
 ```bash
-nion config setup                         # Interactive setup wizard
-nion config set-key openai sk-...         # Set OpenAI key
-nion config set-key anthropic sk-ant-...  # Set Claude key
-nion config set-key google AIza...        # Set Gemini key
-nion config set-key groq gsk_...          # Set Groq key (FREE!)
-nion config set-key grok xai-...          # Set Grok key
-nion config set-provider groq             # Set default provider
-nion config set-model gpt-4o              # Set default model
-nion config show                          # View current config
-nion config list-models                   # All available models
+nion ask "What does the Rust borrow checker actually do?"
+nion ask "Write a one-liner to count lines in a file" -p groq
+nion ask "Translate: good morning" -p anthropic -m claude-3-5-haiku-20241022
 ```
 
-### `nion update` — Manual update check
+---
+
+### `nion config`
+
+Manages your keys and settings.
+
+```bash
+nion config setup                      # interactive setup wizard
+nion config set-key groq gsk_xxx       # add or update a specific key
+nion config set-key openai sk-xxx
+nion config show                       # print current config
+```
+
+---
+
+### `nion models`
+
+Lists every available model across all providers.
+
+```bash
+nion models
+```
+
+---
+
+### `nion update`
+
+Checks GitHub for a newer version and updates the binary in place.
 
 ```bash
 nion update
 ```
 
-> Nion checks for updates **automatically** every time you run it.
-> When a new release appears on GitHub, it asks:
->
-> ```
-> ──────────────────────────────────────────────────────────────
->   ⚡ Nion v0.2.0 is available! Would you like to update? [Y/n]
-> ──────────────────────────────────────────────────────────────
->   Y  →  downloads new binary, replaces itself, done
->   N  →  keeps running as-is, update later with `nion update`
-> ```
+---
+
+## Available models
+
+**OpenAI** — `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o1`, `o1-mini`, `o3-mini`
+
+**Anthropic** — `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-opus-20240229`, `claude-3-haiku-20240307`
+
+**Google** — `gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-2.0-flash`, `gemini-2.0-flash-thinking-exp`
+
+**Groq** — `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `llama3-70b-8192`, `mixtral-8x7b-32768`, `gemma2-9b-it`, `qwen-2.5-72b`
+
+**xAI** — `grok-2-latest`, `grok-2-vision-latest`, `grok-beta`
+
+**DeepSeek** — `deepseek-chat`, `deepseek-reasoner`
+
+**Mistral** — `mistral-large-latest`, `mistral-small-latest`, `codestral-latest`, `open-mistral-nemo`
+
+**Perplexity** — `sonar-pro`, `sonar`, `sonar-reasoning-pro`
+
+**Together AI** — `meta-llama/Llama-3.3-70B-Instruct-Turbo`, `deepseek-ai/DeepSeek-V3`, `Qwen/Qwen2.5-72B-Instruct-Turbo`, `mistralai/Mixtral-8x22B-Instruct-v0.1`
+
+**Cohere** — `command-r-plus-08-2024`, `command-r-08-2024`, `command-light`
 
 ---
 
-## Supported Providers & Models
+## Where nion is useful
 
-| Provider | Models | Free Tier |
-|----------|--------|-----------|
-| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo | ❌ |
-| **Anthropic** | claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus | ❌ |
-| **Google** | gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash | ✅ |
-| **Groq** ⚡ | llama-3.3-70b, llama-3.1-8b, mixtral-8x7b, gemma2-9b | ✅ |
-| **xAI** | grok-2-latest, grok-beta | ❌ |
+**On a remote server.** A single binary you can drop in and start using immediately. No Python environment, no npm, no runtime to install.
 
-> 💡 **New to AI APIs?** Start with **Groq** — free, no credit card, blazing fast.
-> Get your key: [console.groq.com](https://console.groq.com)
+**On Android via Termux.** The `nion-aarch64-linux` binary is built with the Android NDK so it links against Bionic libc and works natively in Termux. TLS certificates are bundled via `rustls`, so there is no dependency on system OpenSSL.
+
+**In shell scripts.** `nion ask` returns plain text to stdout, so you can pipe it into other commands or use it in automation.
+
+**When comparing models.** Because all providers are in one tool, switching between GPT-4o, Claude, and Llama takes a single command in the same terminal session.
+
+**For agentic coding tasks.** Give `nion agent` a task — write a script, fix a bug, refactor a module — and it handles it end to end without you needing to copy-paste code back and forth.
 
 ---
 
-## Config File
+## Configuration file
 
-Stored at `~/.nion/config.toml`:
+Stored at `~/.nion/config.toml`. You can edit it directly if needed.
 
 ```toml
 default_provider = "groq"
 default_model = "llama-3.3-70b-versatile"
+user_name = "sabab"
 
 [api_keys]
-openai    = "sk-..."
+groq = "gsk_..."
+openai = "sk-..."
 anthropic = "sk-ant-..."
-google    = "AIza..."
-groq      = "gsk_..."
-grok      = "xai-..."
 ```
+
+---
+
+## Platform support
+
+| Platform | Binary |
+|---|---|
+| Linux x86_64 | `nion-x86_64-linux` |
+| Android / Termux (aarch64) | `nion-aarch64-linux` |
+| macOS Intel | `nion-x86_64-macos` |
+| macOS Apple Silicon | `nion-aarch64-macos` |
+| Windows x86_64 | `nion-x86_64-windows.exe` |
 
 ---
 
 ## Contributing
 
-PRs and issues welcome at [github.com/asikrshoudo/nion-cli](https://github.com/asikrshoudo/nion-cli)
+Contributions are welcome — bug fixes, new providers, new features, or documentation improvements.
+
+### Reporting a bug
+
+Open an issue on [GitHub](https://github.com/asikrshoudo/nion-cli/issues) with:
+
+- The exact command you ran
+- What you expected to happen
+- What actually happened (paste the full error output)
+- Your platform and nion version (`nion --version`)
+
+### Suggesting a feature
+
+Open an issue describing what you want and why. If it is a small change, a pull request without an issue first is fine too.
+
+### Submitting a pull request
+
+**Step 1 — Fork the repository**
+
+Go to [github.com/asikrshoudo/nion-cli](https://github.com/asikrshoudo/nion-cli) and click **Fork** in the top right. This creates a copy of the repo under your own GitHub account.
+
+**Step 2 — Clone your fork**
 
 ```bash
-git clone https://github.com/asikrshoudo/nion-cli.git
+git clone https://github.com/YOUR_USERNAME/nion-cli
 cd nion-cli
-cargo build
-cargo test
 ```
+
+**Step 3 — Create a branch**
+
+Name it something descriptive:
+
+```bash
+git checkout -b fix/describe-what-you-fixed
+# or
+git checkout -b feat/describe-what-you-added
+```
+
+**Step 4 — Make your changes**
+
+If you are adding a new provider, `src/providers/groq.rs` is the simplest reference to follow. After writing your provider, you also need to register it in three places:
+
+- `src/providers/mod.rs` — add it to the `get_provider()` match block
+- `src/ui/mod.rs` — add its models to `print_models_list()`
+- `src/config/mod.rs` — add it to the provider list in `run_setup_wizard()`
+
+**Step 5 — Test your changes**
+
+```bash
+cargo build
+cargo run -- chat
+cargo run -- agent
+```
+
+**Step 6 — Commit**
+
+Write a clear commit message:
+
+```bash
+git add .
+git commit -m "feat: add XYZ provider"
+# or
+git commit -m "fix: describe what was broken and how you fixed it"
+```
+
+**Step 7 — Push to your fork**
+
+```bash
+git push origin feat/describe-what-you-added
+```
+
+**Step 8 — Open a pull request**
+
+Go to your fork on GitHub. You will see a banner saying your branch is ahead of `asikrshoudo/nion-cli`. Click **Compare & pull request**.
+
+Write a description explaining:
+- What you changed and why
+- How to test it
+- Any known limitations
+
+Then click **Create pull request**. That is it — the PR will be reviewed and merged if everything looks good.
+
+### Code guidelines
+
+- Run `cargo fmt` before committing
+- Avoid `unwrap()` in code that runs at runtime — use `?` or handle the error explicitly
+- Keep provider files self-contained — do not import from other provider files
+- If your provider uses a different system prompt format, override `complete_with_system` in your implementation (see `src/providers/anthropic.rs` for an example)
+
+---
+
+## Project structure
+
+```
+nion-cli/
+├── src/
+│   ├── main.rs             entry point
+│   ├── cli/mod.rs          all CLI commands and routing
+│   ├── agent/mod.rs        agentic loop and tool execution
+│   ├── config/mod.rs       config file and setup wizard
+│   ├── session/mod.rs      Message type (user/assistant)
+│   ├── ui/mod.rs           terminal output, menus, box rendering
+│   ├── updater/mod.rs      auto-update from GitHub releases
+│   └── providers/
+│       ├── mod.rs          Provider trait and factory function
+│       ├── openai.rs
+│       ├── anthropic.rs
+│       ├── google.rs
+│       ├── groq.rs
+│       ├── grok.rs
+│       ├── deepseek.rs
+│       ├── mistral.rs
+│       ├── perplexity.rs
+│       ├── together.rs
+│       └── cohere.rs
+├── npm/
+│   ├── package.json        npm package definition
+│   ├── install.js          post-install script (downloads binary)
+│   └── bin/                binary lands here after install
+├── .github/workflows/
+│   └── release.yml         builds for all platforms + publishes to npm
+├── install.sh              curl installer
+└── Cargo.toml
+```
+
+---
+
+## Security
+
+API keys are stored only in `~/.nion/config.toml` on your machine and are sent only to the API endpoint of the provider you are talking to. Nion has no telemetry and collects no data.
+
+In agent mode, a hardcoded blocklist prevents the AI from running commands like `rm -rf /`, `mkfs`, or `dd if=` regardless of what the model decides. That said, agent mode gives the AI real access to your filesystem and shell, so use your judgment about what tasks you give it.
 
 ---
 
 ## License
 
-**GNU Affero General Public License v3.0** — see [LICENSE](LICENSE)
-
-Nion will always be free and open source.
+[AGPL-3.0](LICENSE). Free to use, fork, and modify. If you distribute a modified version, it must also be open source under the same license.
 
 ---
 
-*Made with ⚡ and 🦀 by [asikrshoudo](https://github.com/asikrshoudo)*
+Built in Rust by [asikrshoudo](https://github.com/asikrshoudo).
