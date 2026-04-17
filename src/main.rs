@@ -3,6 +3,8 @@ mod cli;
 mod config;
 mod providers;
 mod session;
+mod telegram;
+mod tools;
 mod ui;
 mod updater;
 

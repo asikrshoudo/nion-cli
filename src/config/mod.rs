@@ -10,6 +10,14 @@ pub struct Config {
     pub user_name: Option<String>,
     #[serde(default)]
     pub api_keys: HashMap<String, String>,
+
+    // Telegram integration (optional)
+    pub telegram_bot_token: Option<String>,
+    #[serde(default)]
+    pub telegram_allowed_users: Vec<i64>, // Telegram user IDs — empty = allow all
+
+    // GitHub integration (optional)
+    pub github_token: Option<String>,
 }
 
 impl Config {
@@ -48,6 +56,13 @@ impl Config {
 
     pub fn is_first_run(&self) -> bool {
         self.user_name.is_none()
+    }
+
+    pub fn is_telegram_user_allowed(&self, user_id: i64) -> bool {
+        if self.telegram_allowed_users.is_empty() {
+            return true; // no restriction
+        }
+        self.telegram_allowed_users.contains(&user_id)
     }
 }
 
@@ -115,7 +130,6 @@ pub async fn run_setup_wizard() -> Result<()> {
     println!();
 
     loop {
-        // Show which providers are already configured
         let labels: Vec<String> = providers
             .iter()
             .map(|(id, name, _)| {
@@ -127,18 +141,16 @@ pub async fn run_setup_wizard() -> Result<()> {
             })
             .collect();
 
-        // Add "Done" option at the end
         let mut menu_items = labels.clone();
         menu_items.push("Done — finish setup".to_string());
 
         let default_idx = providers
             .iter()
             .position(|(id, _, _)| cfg.default_provider.as_deref() == Some(id))
-            .unwrap_or(3); // groq default
+            .unwrap_or(3);
 
         let selected = ui::select_menu(&menu_items, default_idx)?;
 
-        // "Done" selected
         if selected == providers.len() {
             break;
         }
@@ -168,11 +180,57 @@ pub async fn run_setup_wizard() -> Result<()> {
         println!();
     }
 
+    // Telegram setup
+    println!();
+    println!("  --- Telegram Bot (optional) ---");
+    println!("  Get a token from @BotFather on Telegram.");
+    print!("  Telegram Bot Token (leave blank to skip): ");
+    io::stdout().flush()?;
+
+    let mut tg_token = String::new();
+    io::stdin().read_line(&mut tg_token)?;
+    let tg_token = tg_token.trim();
+
+    if !tg_token.is_empty() {
+        cfg.telegram_bot_token = Some(tg_token.to_string());
+
+        print!("  Your Telegram User ID (for security, leave blank to allow all): ");
+        io::stdout().flush()?;
+        let mut tg_id = String::new();
+        io::stdin().read_line(&mut tg_id)?;
+        let tg_id = tg_id.trim();
+        if !tg_id.is_empty() {
+            if let Ok(id) = tg_id.parse::<i64>() {
+                cfg.telegram_allowed_users = vec![id];
+                ui::print_info(&format!("Only user ID {} can use the bot.", id));
+            }
+        }
+        ui::print_success("Telegram bot token saved. Run 'nion serve' to start the bot.");
+    }
+
+    // GitHub setup
+    println!();
+    println!("  --- GitHub Token (optional) ---");
+    println!("  Allows the agent to push to GitHub repos.");
+    println!("  Generate at: https://github.com/settings/tokens");
+    print!("  GitHub Token (leave blank to skip): ");
+    io::stdout().flush()?;
+
+    let mut gh_token = String::new();
+    io::stdin().read_line(&mut gh_token)?;
+    let gh_token = gh_token.trim();
+
+    if !gh_token.is_empty() {
+        cfg.github_token = Some(gh_token.to_string());
+        ui::print_success("GitHub token saved.");
+    }
+
     cfg.save()?;
 
     println!();
     ui::print_success("Setup complete.");
-    println!("  Run 'nion chat' to start.");
+    println!("  Run 'nion chat' to start chatting.");
+    println!("  Run 'nion serve' to start the Telegram bot.");
     println!();
 
     Ok(())

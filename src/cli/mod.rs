@@ -14,35 +14,31 @@ struct Cli {
 enum Commands {
     /// Start an interactive chat session
     Chat {
-        /// Provider to use (openai, anthropic, google, groq, grok, deepseek, mistral, perplexity, together, cohere)
         #[arg(short, long)]
         provider: Option<String>,
-        /// Model to use
         #[arg(short, long)]
         model: Option<String>,
     },
 
     /// Start an agentic session — AI can read/write files and run commands
     Agent {
-        /// Provider to use
         #[arg(short, long)]
         provider: Option<String>,
-        /// Model to use
         #[arg(short, long)]
         model: Option<String>,
     },
 
     /// Ask a single question and get a response
     Ask {
-        /// The question to ask
         question: Vec<String>,
-        /// Provider to use
         #[arg(short, long)]
         provider: Option<String>,
-        /// Model to use
         #[arg(short, long)]
         model: Option<String>,
     },
+
+    /// Start the Telegram bot (runs until stopped)
+    Serve,
 
     /// Configuration commands
     Config {
@@ -65,6 +61,14 @@ enum ConfigAction {
     SetKey {
         provider: String,
         key: String,
+    },
+    /// Set Telegram bot token: nion config set-telegram <token>
+    SetTelegram {
+        token: String,
+    },
+    /// Set GitHub token: nion config set-github <token>
+    SetGithub {
+        token: String,
     },
     /// Show current configuration
     Show,
@@ -95,6 +99,18 @@ pub async fn run() -> Result<()> {
             run_ask(&q, provider.as_deref(), model.as_deref()).await?;
         }
 
+        Some(Commands::Serve) => {
+            let cfg = config::Config::load()?;
+            if cfg.telegram_bot_token.is_none() {
+                ui::print_error("No Telegram bot token configured.");
+                ui::print_info("Run 'nion config set-telegram <token>' or 'nion config setup'.");
+                return Ok(());
+            }
+            ui::print_success("Starting Nion Telegram bot...");
+            ui::print_info("Press Ctrl+C to stop.");
+            crate::telegram::run_serve(cfg).await?;
+        }
+
         Some(Commands::Config { action }) => match action {
             ConfigAction::Setup => {
                 config::run_setup_wizard().await?;
@@ -107,6 +123,18 @@ pub async fn run() -> Result<()> {
                 }
                 cfg.save()?;
                 ui::print_success(&format!("{} API key saved.", provider));
+            }
+            ConfigAction::SetTelegram { token } => {
+                let mut cfg = config::Config::load()?;
+                cfg.telegram_bot_token = Some(token);
+                cfg.save()?;
+                ui::print_success("Telegram bot token saved. Run 'nion serve' to start.");
+            }
+            ConfigAction::SetGithub { token } => {
+                let mut cfg = config::Config::load()?;
+                cfg.github_token = Some(token);
+                cfg.save()?;
+                ui::print_success("GitHub token saved.");
             }
             ConfigAction::Show => {
                 let cfg = config::Config::load()?;
@@ -131,21 +159,20 @@ async fn run_chat(provider_name: Option<&str>, model_override: Option<&str>) -> 
 
     let cfg = config::Config::load()?;
 
-    let provider_id = provider_name
+    let mut current_provider_id = provider_name
         .map(String::from)
         .or_else(|| cfg.default_provider.clone())
         .unwrap_or_else(|| "groq".to_string());
 
-    let provider = providers::get_provider(&provider_id, &cfg)?;
+    // Build provider once — not on every message
+    let mut provider = providers::get_provider(&current_provider_id, &cfg)?;
 
-    let model = model_override
+    let mut current_model = model_override
         .map(String::from)
         .or_else(|| cfg.default_model.clone())
         .unwrap_or_else(|| provider.default_model().to_string());
 
     let mut history: Vec<Message> = Vec::new();
-    let mut current_provider_id = provider_id.clone();
-    let mut current_model = model.clone();
 
     ui::print_chat_header(&cfg, &current_provider_id, &current_model);
 
@@ -160,7 +187,6 @@ async fn run_chat(provider_name: Option<&str>, model_override: Option<&str>) -> 
             continue;
         }
 
-        // Handle commands
         if input.starts_with('/') {
             let parts: Vec<&str> = input.splitn(2, ' ').collect();
             match parts[0] {
@@ -191,8 +217,9 @@ async fn run_chat(provider_name: Option<&str>, model_override: Option<&str>) -> 
                         let pid = p.trim().to_string();
                         match providers::get_provider(&pid, &cfg) {
                             Ok(new_p) => {
-                                current_provider_id = pid;
                                 current_model = new_p.default_model().to_string();
+                                current_provider_id = pid;
+                                provider = new_p;
                                 ui::print_info(&format!(
                                     "Switched to {} ({})",
                                     current_provider_id, current_model
@@ -225,9 +252,8 @@ async fn run_chat(provider_name: Option<&str>, model_override: Option<&str>) -> 
 
         history.push(Message::user(&input));
 
-        let p = providers::get_provider(&current_provider_id, &cfg)?;
         let spinner = ui::start_spinner("Thinking...");
-        let result = p.complete(&history, &current_model).await;
+        let result = provider.complete(&history, &current_model).await;
         spinner.finish_and_clear();
 
         match result {
@@ -246,8 +272,6 @@ async fn run_chat(provider_name: Option<&str>, model_override: Option<&str>) -> 
 }
 
 async fn run_ask(question: &str, provider_name: Option<&str>, model_override: Option<&str>) -> Result<()> {
-    use crate::session::Message;
-
     let cfg = config::Config::load()?;
 
     let provider_id = provider_name
@@ -262,7 +286,7 @@ async fn run_ask(question: &str, provider_name: Option<&str>, model_override: Op
         .or_else(|| cfg.default_model.clone())
         .unwrap_or_else(|| provider.default_model().to_string());
 
-    let messages = vec![Message::user(question)];
+    let messages = vec![crate::session::Message::user(question)];
 
     let spinner = ui::start_spinner("Thinking...");
     let result = provider.complete(&messages, &model).await;
