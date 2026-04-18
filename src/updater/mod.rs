@@ -67,8 +67,7 @@ pub async fn force_update() -> Result<()> {
         }
         Err(e) => {
             ui::print_error(&format!("Could not check for updates: {}", e));
-            println!("  You can update manually:");
-            println!("  git pull && cargo build --release");
+            println!("  Update manually: npm install -g nion-cli");
         }
     }
 
@@ -82,11 +81,12 @@ pub async fn download_and_replace(version: &str) -> Result<()> {
     let os = env::consts::OS;
     let arch = env::consts::ARCH;
 
-    let target = match (os, arch) {
-        ("linux", "x86_64") => "x86_64-unknown-linux-musl",
-        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
+    // Binary names must match release.yml exactly
+    let binary_name = match (os, arch) {
+        ("linux", "x86_64")  => "nion-x86_64-linux",
+        ("linux", "aarch64") => "nion-aarch64-linux",  // Termux
+        ("macos", "x86_64")  => "nion-x86_64-macos",
+        ("macos", "aarch64") => "nion-aarch64-macos",
         ("windows", _) => {
             println!("  Download the new .exe from:");
             println!(
@@ -97,14 +97,14 @@ pub async fn download_and_replace(version: &str) -> Result<()> {
         }
         _ => {
             ui::print_error("Auto-update not available for this platform.");
-            println!("  Update manually: git pull && cargo build --release");
+            println!("  Update manually: npm install -g nion-cli");
             return Ok(());
         }
     };
 
     let url = format!(
-        "https://github.com/{}/releases/download/v{}/nion-{}",
-        GITHUB_REPO, version, target
+        "https://github.com/{}/releases/download/v{}/{}",
+        GITHUB_REPO, version, binary_name
     );
 
     let spinner = ui::start_spinner(&format!("Downloading v{}...", version));
