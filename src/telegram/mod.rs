@@ -4,19 +4,16 @@ use tokio::sync::Mutex;
 
 use anyhow::Result;
 use teloxide::prelude::*;
-use teloxide::types::ParseMode;
 use teloxide::utils::command::BotCommands;
 
 use crate::config::Config;
 use crate::providers;
-use crate::session::Message;
+use crate::session::Message as AiMessage;
 use crate::tools;
-
-// ── Per-chat session state ────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct ChatSession {
-    history: Vec<Message>,
+    history: Vec<AiMessage>,
     provider_id: String,
     model: String,
 }
@@ -33,8 +30,6 @@ impl ChatSession {
 
 type Sessions = Arc<Mutex<HashMap<i64, ChatSession>>>;
 
-// ── Bot commands ──────────────────────────────────────────────────────────
-
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Nion Bot commands:")]
 enum Command {
@@ -50,34 +45,26 @@ enum Command {
     Ask(String),
     #[command(description = "Show current provider and model")]
     Status,
-    #[command(description = "Start / restart the bot")]
+    #[command(description = "Start the bot")]
     Start,
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────
 
 pub async fn run_serve(cfg: Config) -> Result<()> {
     let token = cfg
         .telegram_bot_token
         .as_ref()
-        .expect("telegram_bot_token must be set before calling run_serve");
+        .expect("telegram_bot_token must be set");
 
     let bot = Bot::new(token);
 
-    // Determine default provider and model
     let default_provider_id = cfg
         .default_provider
         .clone()
         .unwrap_or_else(|| "groq".to_string());
 
-    let default_model = {
-        match providers::get_provider(&default_provider_id, &cfg) {
-            Ok(p) => cfg
-                .default_model
-                .clone()
-                .unwrap_or_else(|| p.default_model().to_string()),
-            Err(_) => "llama-3.3-70b-versatile".to_string(),
-        }
+    let default_model = match providers::get_provider(&default_provider_id, &cfg) {
+        Ok(p) => cfg.default_model.clone().unwrap_or_else(|| p.default_model().to_string()),
+        Err(_) => "llama-3.3-70b-versatile".to_string(),
     };
 
     let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
@@ -92,40 +79,24 @@ pub async fn run_serve(cfg: Config) -> Result<()> {
                 .endpoint({
                     let sessions = sessions.clone();
                     let cfg = cfg.clone();
-                    let default_provider_id = default_provider_id.clone();
-                    let default_model = default_model.clone();
-                    move |bot: Bot, msg: Message, cmd: Command| {
-                        handle_command(
-                            bot,
-                            msg,
-                            cmd,
-                            sessions.clone(),
-                            cfg.clone(),
-                            default_provider_id.clone(),
-                            default_model.clone(),
-                        )
+                    let dp = default_provider_id.clone();
+                    let dm = default_model.clone();
+                    move |bot: Bot, msg: teloxide::types::Message, cmd: Command| {
+                        handle_command(bot, msg, cmd, sessions.clone(), cfg.clone(), dp.clone(), dm.clone())
                     }
                 }),
         )
         .branch(dptree::endpoint({
             let sessions = sessions.clone();
             let cfg = cfg.clone();
-            let default_provider_id = default_provider_id.clone();
-            let default_model = default_model.clone();
-            move |bot: Bot, msg: Message| {
-                handle_message(
-                    bot,
-                    msg,
-                    sessions.clone(),
-                    cfg.clone(),
-                    default_provider_id.clone(),
-                    default_model.clone(),
-                )
+            let dp = default_provider_id.clone();
+            let dm = default_model.clone();
+            move |bot: Bot, msg: teloxide::types::Message| {
+                handle_message(bot, msg, sessions.clone(), cfg.clone(), dp.clone(), dm.clone())
             }
         }));
 
     Dispatcher::builder(bot, handler)
-        .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -133,17 +104,13 @@ pub async fn run_serve(cfg: Config) -> Result<()> {
     Ok(())
 }
 
-// ── Security check ────────────────────────────────────────────────────────
-
 fn is_allowed(cfg: &Config, user_id: i64) -> bool {
     cfg.is_telegram_user_allowed(user_id)
 }
 
-// ── Command handler ───────────────────────────────────────────────────────
-
 async fn handle_command(
     bot: Bot,
-    msg: Message,
+    msg: teloxide::types::Message,
     cmd: Command,
     sessions: Sessions,
     cfg: Arc<Config>,
@@ -154,32 +121,24 @@ async fn handle_command(
     let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
 
     if !is_allowed(&cfg, user_id) {
-        bot.send_message(chat_id, "⛔ You are not authorized to use this bot.")
-            .await?;
+        bot.send_message(chat_id, "You are not authorized to use this bot.").await?;
         return Ok(());
     }
 
     match cmd {
         Command::Start | Command::Help => {
-            let text = format!(
-                "*Nion AI Bot* 🤖\n\
-                One tool. Every model. Every platform.\n\n\
-                Just send any message and I'll respond using AI.\n\
+            bot.send_message(chat_id,
+                "Nion AI Bot - One tool. Every model. Every platform.\n\n\
+                Send any message to chat with AI.\n\
                 I can also run commands, read/write files, and push to GitHub.\n\n\
-                *Commands:*\n\
-                /help — show this message\n\
-                /clear — clear conversation history\n\
-                /switch <provider> — change AI provider\n\
-                /model <model> — change model\n\
-                /ask <question> — single question (no history)\n\
-                /status — current provider & model\n\n\
-                *Available providers:*\n\
-                groq, openai, anthropic, google, grok,\n\
-                deepseek, mistral, perplexity, together, cohere"
-            );
-            bot.send_message(chat_id, text)
-                .parse_mode(ParseMode::Markdown)
-                .await?;
+                /help - show this message\n\
+                /clear - clear conversation history\n\
+                /switch <provider> - change AI provider\n\
+                /model <name> - change model\n\
+                /ask <question> - single question (no history)\n\
+                /status - current provider and model\n\n\
+                Providers: groq, openai, anthropic, google, grok, deepseek, mistral, perplexity, together, cohere"
+            ).await?;
         }
 
         Command::Clear => {
@@ -187,7 +146,7 @@ async fn handle_command(
             if let Some(s) = sessions.get_mut(&chat_id.0) {
                 s.history.clear();
             }
-            bot.send_message(chat_id, "🗑 History cleared.").await?;
+            bot.send_message(chat_id, "History cleared.").await?;
         }
 
         Command::Status => {
@@ -197,67 +156,47 @@ async fn handle_command(
             } else {
                 (default_provider_id.clone(), default_model.clone())
             };
-            bot.send_message(
-                chat_id,
-                format!("*Provider:* {}\n*Model:* {}", provider, model),
-            )
-            .parse_mode(ParseMode::Markdown)
-            .await?;
+            bot.send_message(chat_id, format!("Provider: {}\nModel: {}", provider, model)).await?;
         }
 
         Command::Switch(provider_id) => {
             let provider_id = provider_id.trim().to_string();
             if provider_id.is_empty() {
-                bot.send_message(chat_id, "Usage: /switch <provider>\nExample: /switch groq")
-                    .await?;
+                bot.send_message(chat_id, "Usage: /switch groq").await?;
                 return Ok(());
             }
-
             match providers::get_provider(&provider_id, &cfg) {
                 Ok(p) => {
                     let new_model = p.default_model().to_string();
                     let mut sessions = sessions.lock().await;
-                    let session = sessions.entry(chat_id.0).or_insert_with(|| {
-                        ChatSession::new(default_provider_id.clone(), default_model.clone())
-                    });
+                    let session = sessions.entry(chat_id.0)
+                        .or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
                     session.provider_id = provider_id.clone();
                     session.model = new_model.clone();
-                    bot.send_message(
-                        chat_id,
-                        format!("✅ Switched to *{}* ({})", provider_id, new_model),
-                    )
-                    .parse_mode(ParseMode::Markdown)
-                    .await?;
+                    bot.send_message(chat_id, format!("Switched to {} ({})", provider_id, new_model)).await?;
                 }
-                Err(e) => {
-                    bot.send_message(chat_id, format!("❌ {}", e)).await?;
-                }
+                Err(e) => { bot.send_message(chat_id, format!("Error: {}", e)).await?; }
             }
         }
 
         Command::Model(model_name) => {
             let model_name = model_name.trim().to_string();
             if model_name.is_empty() {
-                bot.send_message(chat_id, "Usage: /model <model-name>")
-                    .await?;
+                bot.send_message(chat_id, "Usage: /model llama-3.3-70b-versatile").await?;
                 return Ok(());
             }
             let mut sessions = sessions.lock().await;
-            let session = sessions.entry(chat_id.0).or_insert_with(|| {
-                ChatSession::new(default_provider_id.clone(), default_model.clone())
-            });
+            let session = sessions.entry(chat_id.0)
+                .or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
             session.model = model_name.clone();
-            bot.send_message(chat_id, format!("✅ Model set to: {}", model_name))
-                .await?;
+            bot.send_message(chat_id, format!("Model set to: {}", model_name)).await?;
         }
 
         Command::Ask(question) => {
             if question.trim().is_empty() {
-                bot.send_message(chat_id, "Usage: /ask <your question>")
-                    .await?;
+                bot.send_message(chat_id, "Usage: /ask your question here").await?;
                 return Ok(());
             }
-
             let (provider_id, model) = {
                 let sessions = sessions.lock().await;
                 if let Some(s) = sessions.get(&chat_id.0) {
@@ -266,20 +205,15 @@ async fn handle_command(
                     (default_provider_id.clone(), default_model.clone())
                 }
             };
-
-            let thinking = bot
-                .send_message(chat_id, "⏳ Thinking...")
-                .await?;
-
-            let messages = vec![Message::user(question.trim())];
+            let thinking = bot.send_message(chat_id, "Thinking...").await?;
+            let messages = vec![AiMessage::user(question.trim())];
             let response = match providers::get_provider(&provider_id, &cfg) {
                 Ok(p) => match p.complete(&messages, &model).await {
                     Ok(r) => r,
-                    Err(e) => format!("❌ Error: {}", e),
+                    Err(e) => format!("Error: {}", e),
                 },
-                Err(e) => format!("❌ {}", e),
+                Err(e) => format!("Error: {}", e),
             };
-
             bot.delete_message(chat_id, thinking.id).await.ok();
             send_long_message(&bot, chat_id, &response).await?;
         }
@@ -288,11 +222,9 @@ async fn handle_command(
     Ok(())
 }
 
-// ── Message handler (agentic loop) ────────────────────────────────────────
-
 async fn handle_message(
     bot: Bot,
-    msg: Message,
+    msg: teloxide::types::Message,
     sessions: Sessions,
     cfg: Arc<Config>,
     default_provider_id: String,
@@ -300,23 +232,19 @@ async fn handle_message(
 ) -> Result<(), teloxide::RequestError> {
     let text = match msg.text() {
         Some(t) => t.to_string(),
-        None => return Ok(()), // ignore non-text
+        None => return Ok(()),
     };
 
     let chat_id = msg.chat.id;
     let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
 
     if !is_allowed(&cfg, user_id) {
-        bot.send_message(chat_id, "⛔ You are not authorized to use this bot.")
-            .await?;
+        bot.send_message(chat_id, "You are not authorized to use this bot.").await?;
         return Ok(());
     }
 
-    if text.trim().is_empty() {
-        return Ok(());
-    }
+    if text.trim().is_empty() { return Ok(()); }
 
-    // Get or create session
     let (provider_id, model) = {
         let sessions = sessions.lock().await;
         if let Some(s) = sessions.get(&chat_id.0) {
@@ -326,59 +254,42 @@ async fn handle_message(
         }
     };
 
-    // Add user message to history
     {
         let mut sessions = sessions.lock().await;
-        let session = sessions.entry(chat_id.0).or_insert_with(|| {
-            ChatSession::new(default_provider_id.clone(), default_model.clone())
-        });
-        session.history.push(Message::user(&text));
+        let session = sessions.entry(chat_id.0)
+            .or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
+        session.history.push(AiMessage::user(&text));
     }
 
     let provider = match providers::get_provider(&provider_id, &cfg) {
         Ok(p) => p,
         Err(e) => {
-            bot.send_message(chat_id, format!("❌ {}", e)).await?;
+            bot.send_message(chat_id, format!("Error: {}", e)).await?;
             return Ok(());
         }
     };
 
     let github_token = cfg.github_token.clone();
+    let thinking_msg = bot.send_message(chat_id, "Thinking...").await?;
 
-    // Send "thinking" indicator
-    let thinking_msg = bot.send_message(chat_id, "⏳ Thinking...").await?;
-
-    // Agentic loop
-    let mut tool_count = 0;
-    const MAX_TOOL_CALLS: u32 = 20; // safety limit
+    let mut tool_count = 0u32;
+    const MAX_TOOL_CALLS: u32 = 20;
 
     loop {
         let history = {
             let sessions = sessions.lock().await;
-            sessions
-                .get(&chat_id.0)
-                .map(|s| s.history.clone())
-                .unwrap_or_default()
+            sessions.get(&chat_id.0).map(|s| s.history.clone()).unwrap_or_default()
         };
 
-        let result = provider
-            .complete_with_system(&history, &model, tools::SYSTEM_PROMPT)
-            .await;
-
-        let response = match result {
+        let response = match provider.complete_with_system(&history, &model, tools::SYSTEM_PROMPT).await {
             Ok(r) => r,
             Err(e) => {
-                // Remove thinking message
                 bot.delete_message(chat_id, thinking_msg.id).await.ok();
-                // Remove last user message from history on error
                 {
                     let mut sessions = sessions.lock().await;
-                    if let Some(s) = sessions.get_mut(&chat_id.0) {
-                        s.history.pop();
-                    }
+                    if let Some(s) = sessions.get_mut(&chat_id.0) { s.history.pop(); }
                 }
-                bot.send_message(chat_id, format!("❌ AI error: {}", e))
-                    .await?;
+                bot.send_message(chat_id, format!("AI error: {}", e)).await?;
                 return Ok(());
             }
         };
@@ -386,76 +297,45 @@ async fn handle_message(
         if let Some((tool_name, tool_input)) = tools::parse_tool_call(&response) {
             tool_count += 1;
 
-            // Show any thinking text before the tool call
             let before = tools::text_before_tool(&response);
             if !before.is_empty() {
                 bot.delete_message(chat_id, thinking_msg.id).await.ok();
                 send_long_message(&bot, chat_id, before).await?;
             }
 
-            // Show tool invocation
             let preview = tool_input.lines().next().unwrap_or("").trim();
             bot.delete_message(chat_id, thinking_msg.id).await.ok();
-            let tool_msg = bot
-                .send_message(
-                    chat_id,
-                    format!("⚙️ `[{}]` {}", tool_name, preview),
-                )
-                .parse_mode(ParseMode::Markdown)
-                .await?;
+            bot.send_message(chat_id, format!("[{}] {}", tool_name, preview)).await?;
 
-            // Execute tool
-            let tool_result = tools::execute_tool(
-                &tool_name,
-                &tool_input,
-                github_token.as_deref(),
-            );
-
-            // Show tool result (trimmed for Telegram)
+            let tool_result = tools::execute_tool(&tool_name, &tool_input, github_token.as_deref());
             let result_preview = truncate_for_telegram(&tool_result, 800);
-            bot.send_message(chat_id, format!("```\n{}\n```", result_preview))
-                .parse_mode(ParseMode::Markdown)
-                .await
-                .ok(); // ok() — don't fail if markdown parse error
+            bot.send_message(chat_id, result_preview).await.ok();
 
-            // Feed tool result into history
             {
                 let mut sessions = sessions.lock().await;
                 if let Some(s) = sessions.get_mut(&chat_id.0) {
-                    s.history.push(Message::assistant(&response));
-                    s.history.push(Message::user(&format!(
-                        "[Tool: {}]\n[Result]\n{}",
-                        tool_name, tool_result
-                    )));
+                    s.history.push(AiMessage::assistant(&response));
+                    s.history.push(AiMessage::user(&format!("[Tool: {}]\n[Result]\n{}", tool_name, tool_result)));
                 }
             }
 
-            // Safety limit
             if tool_count >= MAX_TOOL_CALLS {
-                bot.delete_message(chat_id, tool_msg.id).await.ok();
-                bot.send_message(chat_id, "⚠️ Reached tool call limit. Stopping agent loop.")
-                    .await?;
+                bot.send_message(chat_id, "Reached tool call limit. Stopping.").await?;
                 break;
             }
 
-            // Continue agent loop — show new thinking indicator
-            let _ = bot
-                .send_message(chat_id, "⏳ Continuing...")
-                .await;
-
+            bot.send_message(chat_id, "Continuing...").await.ok();
             continue;
         }
 
-        // No tool call — final answer
+        // Final answer
         bot.delete_message(chat_id, thinking_msg.id).await.ok();
-
         {
             let mut sessions = sessions.lock().await;
             if let Some(s) = sessions.get_mut(&chat_id.0) {
-                s.history.push(Message::assistant(&response));
+                s.history.push(AiMessage::assistant(&response));
             }
         }
-
         send_long_message(&bot, chat_id, &response).await?;
         break;
     }
@@ -463,22 +343,12 @@ async fn handle_message(
     Ok(())
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-/// Telegram messages have a 4096 char limit. Split long messages.
-async fn send_long_message(
-    bot: &Bot,
-    chat_id: ChatId,
-    text: &str,
-) -> Result<(), teloxide::RequestError> {
+async fn send_long_message(bot: &Bot, chat_id: ChatId, text: &str) -> Result<(), teloxide::RequestError> {
     const LIMIT: usize = 4000;
-
     if text.len() <= LIMIT {
         bot.send_message(chat_id, text).await?;
         return Ok(());
     }
-
-    // Split at newlines
     let mut chunk = String::new();
     for line in text.lines() {
         if chunk.len() + line.len() + 1 > LIMIT {
@@ -487,22 +357,16 @@ async fn send_long_message(
                 chunk.clear();
             }
         }
-        if !chunk.is_empty() {
-            chunk.push('\n');
-        }
+        if !chunk.is_empty() { chunk.push('\n'); }
         chunk.push_str(line);
     }
     if !chunk.is_empty() {
         bot.send_message(chat_id, &chunk).await?;
     }
-
     Ok(())
 }
 
-/// Truncate text to max_chars, appending "... (truncated)" if needed.
 fn truncate_for_telegram(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
-        return text.to_string();
-    }
-    format!("{}...\n(truncated — {} total chars)", &text[..max_chars], text.len())
+    if text.len() <= max_chars { return text.to_string(); }
+    format!("{}...\n({} total chars)", &text[..max_chars], text.len())
 }
