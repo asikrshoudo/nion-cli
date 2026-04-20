@@ -1,10 +1,9 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-
-use anyhow::Result;
 use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
+use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::providers;
@@ -69,7 +68,7 @@ pub async fn run_serve(cfg: Config) -> Result<()> {
                     let cfg = cfg.clone();
                     let dp = default_provider_id.clone();
                     let dm = default_model.clone();
-                    move |bot: Bot, msg: teloxide::types::Message, cmd: Command| {
+                    move |bot: Bot, msg: Message, cmd: Command| {
                         handle_command(bot, msg, cmd, sessions.clone(), cfg.clone(), dp.clone(), dm.clone())
                     }
                 }),
@@ -79,7 +78,7 @@ pub async fn run_serve(cfg: Config) -> Result<()> {
             let cfg = cfg.clone();
             let dp = default_provider_id.clone();
             let dm = default_model.clone();
-            move |bot: Bot, msg: teloxide::types::Message| {
+            move |bot: Bot, msg: Message| {
                 handle_message(bot, msg, sessions.clone(), cfg.clone(), dp.clone(), dm.clone())
             }
         }));
@@ -92,29 +91,22 @@ fn is_allowed(cfg: &Config, user_id: i64) -> bool {
     cfg.is_telegram_user_allowed(user_id)
 }
 
-/// Extract a friendly error message — especially for rate limits
 fn friendly_error(e: &str) -> String {
-    if e.contains("429") || e.contains("rate_limit") || e.contains("Too Many Requests") {
-        // Try to extract retry time
-        if let Some(pos) = e.find("Please try again in ") {
-            let rest = &e[pos + 20..];
-            let secs = rest.split('s').next().unwrap_or("a few seconds");
-            return format!("⏳ Rate limit reached. Try again in {}.", secs);
-        }
-        return "⏳ Rate limit reached. Please wait a moment and try again.".to_string();
+    if e.contains("429") || e.contains("rate_limit") {
+        return "Rate limit reached. Please wait and try again.".to_string();
     }
     if e.contains("401") || e.contains("Unauthorized") {
-        return "❌ Invalid API key. Run 'nion config setup' to fix.".to_string();
+        return "Invalid API key. Run 'nion config setup' to fix.".to_string();
     }
-    if e.contains("timeout") || e.contains("Timeout") {
-        return "⏱ Request timed out. Try again.".to_string();
+    if e.contains("timeout") {
+        return "Request timed out. Try again.".to_string();
     }
-    format!("❌ Error: {}", e)
+    format!("Error: {}", e)
 }
 
 async fn handle_command(
     bot: Bot,
-    msg: teloxide::types::Message,
+    msg: Message,
     cmd: Command,
     sessions: Sessions,
     cfg: Arc<Config>,
@@ -125,109 +117,77 @@ async fn handle_command(
     let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
 
     if !is_allowed(&cfg, user_id) {
-        bot.send_message(chat_id, "⛔ Not authorized.").await?;
+        bot.send_message(chat_id, "Not authorized.").await?;
         return Ok(());
     }
 
     match cmd {
         Command::Start | Command::Help => {
-            bot.send_message(chat_id,
-                "Nion AI Bot\n\
-                One tool. Every model. Every platform.\n\n\
-                Send any message — I'll respond and can run commands,\n\
-                read/write files, and push to GitHub.\n\n\
-                /clear — clear history\n\
-                /status — current provider & model\n\
-                /switch groq — change provider\n\
-                /model llama-3.3-70b-versatile — change model\n\
-                /ask question — single question (no history)\n\n\
-                Providers: groq, openai, anthropic, google, grok,\n\
-                deepseek, mistral, perplexity, together, cohere"
-            ).await?;
+            bot.send_message(chat_id, "Nion AI Bot\nOne tool. Every model.\n\nSend any message for agent mode.\nCommands: /clear /status /switch <p> /model <m> /ask <q>").await?;
         }
-
         Command::Clear => {
-            let mut sessions = sessions.lock().await;
-            if let Some(s) = sessions.get_mut(&chat_id.0) { s.history.clear(); }
-            bot.send_message(chat_id, "🗑 History cleared.").await?;
+            let mut s = sessions.lock().await;
+            if let Some(session) = s.get_mut(&chat_id.0) { session.history.clear(); }
+            bot.send_message(chat_id, "History cleared.").await?;
         }
-
         Command::Status => {
-            let sessions = sessions.lock().await;
-            let (provider, model) = if let Some(s) = sessions.get(&chat_id.0) {
-                (s.provider_id.clone(), s.model.clone())
+            let s = sessions.lock().await;
+            let (p, m) = if let Some(session) = s.get(&chat_id.0) {
+                (session.provider_id.clone(), session.model.clone())
             } else {
                 (default_provider_id.clone(), default_model.clone())
             };
-            bot.send_message(chat_id, format!("Provider: {}\nModel: {}", provider, model)).await?;
+            bot.send_message(chat_id, format!("Provider: {}\nModel: {}", p, m)).await?;
         }
-
         Command::Switch(provider_id) => {
-            let provider_id = provider_id.trim().to_string();
-            if provider_id.is_empty() {
-                bot.send_message(chat_id, "Usage: /switch groq").await?;
-                return Ok(());
-            }
-            match providers::get_provider(&provider_id, &cfg) {
+            let pid = provider_id.trim().to_string();
+            if pid.is_empty() { bot.send_message(chat_id, "Usage: /switch groq").await?; return Ok(()); }
+            match providers::get_provider(&pid, &cfg) {
                 Ok(p) => {
                     let new_model = p.default_model().to_string();
-                    let mut sessions = sessions.lock().await;
-                    let s = sessions.entry(chat_id.0)
-                        .or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
-                    s.provider_id = provider_id.clone();
-                    s.model = new_model.clone();
-                    bot.send_message(chat_id, format!("✅ Switched to {} ({})", provider_id, new_model)).await?;
+                    let mut s = sessions.lock().await;
+                    let session = s.entry(chat_id.0).or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
+                    session.provider_id = pid.clone();
+                    session.model = new_model.clone();
+                    bot.send_message(chat_id, format!("Switched to {} ({})", pid, new_model)).await?;
                 }
                 Err(e) => { bot.send_message(chat_id, friendly_error(&e.to_string())).await?; }
             }
         }
-
         Command::Model(model_name) => {
-            let model_name = model_name.trim().to_string();
-            if model_name.is_empty() {
-                bot.send_message(chat_id, "Usage: /model llama-3.3-70b-versatile").await?;
-                return Ok(());
-            }
-            let mut sessions = sessions.lock().await;
-            let s = sessions.entry(chat_id.0)
-                .or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
-            s.model = model_name.clone();
-            bot.send_message(chat_id, format!("✅ Model: {}", model_name)).await?;
+            let m = model_name.trim().to_string();
+            if m.is_empty() { bot.send_message(chat_id, "Usage: /model <name>").await?; return Ok(()); }
+            let mut s = sessions.lock().await;
+            let session = s.entry(chat_id.0).or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
+            session.model = m.clone();
+            bot.send_message(chat_id, format!("Model: {}", m)).await?;
         }
-
         Command::Ask(question) => {
-            if question.trim().is_empty() {
-                bot.send_message(chat_id, "Usage: /ask your question here").await?;
-                return Ok(());
-            }
-            let (provider_id, model) = {
-                let sessions = sessions.lock().await;
-                if let Some(s) = sessions.get(&chat_id.0) {
-                    (s.provider_id.clone(), s.model.clone())
+            if question.trim().is_empty() { bot.send_message(chat_id, "Usage: /ask <question>").await?; return Ok(()); }
+            let (pid, m) = {
+                let s = sessions.lock().await;
+                if let Some(session) = s.get(&chat_id.0) {
+                    (session.provider_id.clone(), session.model.clone())
                 } else {
                     (default_provider_id.clone(), default_model.clone())
                 }
             };
-            let thinking = bot.send_message(chat_id, "⏳").await?;
+            let thinking = bot.send_message(chat_id, "Thinking...").await?;
             let messages = vec![AiMessage::user(question.trim())];
-            let response = match providers::get_provider(&provider_id, &cfg) {
-                Ok(p) => match p.complete(&messages, &model).await {
-                    Ok(r) => r,
-                    Err(e) => friendly_error(&e.to_string()),
-                },
+            let response = match providers::get_provider(&pid, &cfg) {
+                Ok(p) => p.complete(&messages, &m).await.unwrap_or_else(|e| friendly_error(&e.to_string())),
                 Err(e) => friendly_error(&e.to_string()),
             };
             bot.delete_message(chat_id, thinking.id).await.ok();
             send_long_message(&bot, chat_id, &response).await?;
         }
     }
-
     Ok(())
 }
 
 async fn handle_message(
     bot: Bot,
-    msg: teloxide::types::Message,
+    msg: Message,
     sessions: Sessions,
     cfg: Arc<Config>,
     default_provider_id: String,
@@ -242,56 +202,50 @@ async fn handle_message(
     let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
 
     if !is_allowed(&cfg, user_id) {
-        bot.send_message(chat_id, "⛔ Not authorized.").await?;
+        bot.send_message(chat_id, "Not authorized.").await?;
         return Ok(());
     }
-
     if text.trim().is_empty() { return Ok(()); }
 
     let (provider_id, model) = {
-        let sessions = sessions.lock().await;
-        if let Some(s) = sessions.get(&chat_id.0) {
-            (s.provider_id.clone(), s.model.clone())
+        let s = sessions.lock().await;
+        if let Some(session) = s.get(&chat_id.0) {
+            (session.provider_id.clone(), session.model.clone())
         } else {
             (default_provider_id.clone(), default_model.clone())
         }
     };
 
     {
-        let mut sessions = sessions.lock().await;
-        let s = sessions.entry(chat_id.0)
+        let mut s = sessions.lock().await;
+        let session = s.entry(chat_id.0)
             .or_insert_with(|| ChatSession::new(default_provider_id.clone(), default_model.clone()));
-        s.history.push(AiMessage::user(&text));
+        session.history.push(AiMessage::user(&text));
     }
 
     let provider = match providers::get_provider(&provider_id, &cfg) {
         Ok(p) => p,
-        Err(e) => {
-            bot.send_message(chat_id, friendly_error(&e.to_string())).await?;
-            return Ok(());
-        }
+        Err(e) => { bot.send_message(chat_id, friendly_error(&e.to_string())).await?; return Ok(()); }
     };
 
     let github_token = cfg.github_token.clone();
-    let thinking_msg = bot.send_message(chat_id, "⏳").await?;
+    let thinking = bot.send_message(chat_id, "Thinking...").await?;
 
     let mut tool_count = 0u32;
     const MAX_TOOL_CALLS: u32 = 20;
 
     loop {
         let history = {
-            let sessions = sessions.lock().await;
-            sessions.get(&chat_id.0).map(|s| s.history.clone()).unwrap_or_default()
+            let s = sessions.lock().await;
+            s.get(&chat_id.0).map(|s| s.history.clone()).unwrap_or_default()
         };
 
         let response = match provider.complete_with_system(&history, &model, tools::SYSTEM_PROMPT).await {
             Ok(r) => r,
             Err(e) => {
-                bot.delete_message(chat_id, thinking_msg.id).await.ok();
-                {
-                    let mut sessions = sessions.lock().await;
-                    if let Some(s) = sessions.get_mut(&chat_id.0) { s.history.pop(); }
-                }
+                bot.delete_message(chat_id, thinking.id).await.ok();
+                let mut s = sessions.lock().await;
+                if let Some(session) = s.get_mut(&chat_id.0) { session.history.pop(); }
                 bot.send_message(chat_id, friendly_error(&e.to_string())).await?;
                 return Ok(());
             }
@@ -300,44 +254,39 @@ async fn handle_message(
         if let Some((tool_name, tool_input)) = tools::parse_tool_call(&response) {
             tool_count += 1;
 
-            // Show thinking text before tool if any
             let before = tools::text_before_tool(&response);
             if !before.is_empty() {
-                bot.delete_message(chat_id, thinking_msg.id).await.ok();
+                bot.delete_message(chat_id, thinking.id).await.ok();
                 send_long_message(&bot, chat_id, before).await?;
             }
 
-            // Execute tool silently
             let tool_result = tools::execute_tool(&tool_name, &tool_input, github_token.as_deref());
 
             {
-                let mut sessions = sessions.lock().await;
-                if let Some(s) = sessions.get_mut(&chat_id.0) {
-                    s.history.push(AiMessage::assistant(&response));
-                    s.history.push(AiMessage::user(&format!(
-                        "[Tool: {}]\n[Result]\n{}", tool_name, tool_result
-                    )));
+                let mut s = sessions.lock().await;
+                if let Some(session) = s.get_mut(&chat_id.0) {
+                    session.history.push(AiMessage::assistant(&response));
+                    session.history.push(AiMessage::user(&format!("[Tool: {}]\n[Result]\n{}", tool_name, tool_result)));
                 }
             }
 
             if tool_count >= MAX_TOOL_CALLS {
-                bot.delete_message(chat_id, thinking_msg.id).await.ok();
-                bot.send_message(chat_id, "⚠️ Too many steps. Task stopped.").await?;
+                bot.delete_message(chat_id, thinking.id).await.ok();
+                bot.send_message(chat_id, "Too many steps. Task stopped.").await?;
                 break;
             }
 
-            // Update thinking indicator
-            bot.delete_message(chat_id, thinking_msg.id).await.ok();
-            let _ = bot.send_message(chat_id, "⏳").await;
+            bot.delete_message(chat_id, thinking.id).await.ok();
+            let _ = bot.send_message(chat_id, "Thinking...").await;
             continue;
         }
 
         // Final answer
-        bot.delete_message(chat_id, thinking_msg.id).await.ok();
+        bot.delete_message(chat_id, thinking.id).await.ok();
         {
-            let mut sessions = sessions.lock().await;
-            if let Some(s) = sessions.get_mut(&chat_id.0) {
-                s.history.push(AiMessage::assistant(&response));
+            let mut s = sessions.lock().await;
+            if let Some(session) = s.get_mut(&chat_id.0) {
+                session.history.push(AiMessage::assistant(&response));
             }
         }
         send_long_message(&bot, chat_id, &response).await?;

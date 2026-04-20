@@ -1,75 +1,30 @@
-/// Shared tool execution module.
-/// Used by both the CLI agent (agent/mod.rs) and Telegram bot (telegram/mod.rs).
+use serde_json::Value;
 
-pub const SYSTEM_PROMPT: &str = r#"You are Nion Agent — an agentic AI assistant that can read and write files, list directories, run shell commands, and interact with GitHub to complete tasks autonomously.
+pub const SYSTEM_PROMPT: &str = r#"You are Nion Agent — autonomous AI like OpenClaw/Claude Code. Read/write files, run commands, use GitHub.
 
-## How to use tools
+Respond ONLY in this exact JSON format (no extra text outside JSON):
 
-When you need to use a tool, output EXACTLY this format — nothing extra on those lines:
+{
+  "thinking": "step-by-step reasoning",
+  "tool": "TOOL_NAME",
+  "input": "INPUT_HERE"
+}
 
-<tool>TOOL_NAME</tool>
-<input>INPUT_HERE</input>
+Or when task is fully complete:
+{
+  "thinking": "final summary",
+  "final_answer": "clear message to user"
+}
 
-## Available tools
-
-### read_file
-Read a file's contents.
-Input: the file path
-Example:
-<tool>read_file</tool>
-<input>src/main.rs</input>
-
-### write_file
-Write content to a file. Creates the file and any parent directories if needed.
-Input: First line is the path. Second line is three dashes (---). Remaining lines are the file content.
-Example:
-<tool>write_file</tool>
-<input>hello.py
----
-print("Hello, world!")
-</input>
-
-### list_dir
-List all files and folders in a directory.
-Input: the directory path. Use "." for current directory.
-Example:
-<tool>list_dir</tool>
-<input>.</input>
-
-### run_command
-Run a shell command and get the output.
-Input: the shell command to run.
-Example:
-<tool>run_command</tool>
-<input>python hello.py</input>
-
-### http_get
-Fetch a URL and return the response body (text only).
-Input: the URL to fetch.
-Example:
-<tool>http_get</tool>
-<input>https://api.github.com/repos/asikrshoudo/nion-cli</input>
-
-### github_clone
-Clone a GitHub repository into the current directory.
-Input: the repository URL.
-Example:
-<tool>github_clone</tool>
-<input>https://github.com/user/repo</input>
-
-### github_push
-Stage all changes, commit with a message, and push to the current branch.
-Input: the commit message.
-Example:
-<tool>github_push</tool>
-<input>fix: update config handling</input>
-
-### github_status
-Show git status of the current directory.
-Input: (none, leave blank)
-Example:
-<tool>github_status</tool>
-<input></input>
+## Tools
+- read_file: file path
+- write_file: path\n---\ncontent
+- list_dir: dir path (use ".")
+- run_command: shell command
+- http_get: url
+- github_clone: repo url
+- github_push: commit message
+- github_status: ""
 
 ## Rules
 - Think step by step before acting
@@ -77,38 +32,27 @@ Example:
 - After receiving a tool result, continue working until the task is fully complete
 - When done, write a clear summary of what you did — with NO more tool tags
 - Never run destructive commands like `rm -rf /` or `format`
-- For dangerous commands (deleting files, formatting), always warn the user first
-"#;
+- For dangerous commands (deleting files, formatting), always warn the user first"#;
 
-/// Parse a tool call from the AI's response text.
-/// Returns (tool_name, tool_input) if found.
 pub fn parse_tool_call(text: &str) -> Option<(String, String)> {
-    let t_start = text.find("<tool>")?;
-    let t_end   = text.find("</tool>")?;
-    let i_start = text.find("<input>")?;
-    let i_end   = text.find("</input>")?;
+    let cleaned = text.trim().replace("```json", "").replace("```", "").trim().to_string();
+    let start = cleaned.find('{')?;
+    let end = cleaned.rfind('}')? + 1;
+    let json_str = &cleaned[start..end];
 
-    if t_end <= t_start || i_end <= i_start || i_start < t_end {
-        return None;
-    }
-
-    let name  = text[t_start + 6..t_end].trim().to_string();
-    let input = text[i_start + 7..i_end].trim_start_matches('\n').trim_end().to_string();
-
-    if name.is_empty() { return None; }
-    Some((name, input))
+    let value: Value = serde_json::from_str(json_str).ok()?;
+    let tool = value.get("tool")?.as_str()?.to_string();
+    let input = value.get("input").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    Some((tool, input))
 }
 
-/// Get the text before the first <tool> tag.
 pub fn text_before_tool(text: &str) -> &str {
-    match text.find("<tool>") {
+    match text.find('{') {
         Some(pos) => text[..pos].trim(),
         None => text.trim(),
     }
 }
 
-/// Execute a tool by name with the given input.
-/// github_token is used for authenticated GitHub operations.
 pub fn execute_tool(name: &str, input: &str, github_token: Option<&str>) -> String {
     match name {
         "read_file"     => tool_read_file(input.trim()),
@@ -119,14 +63,9 @@ pub fn execute_tool(name: &str, input: &str, github_token: Option<&str>) -> Stri
         "github_clone"  => tool_github_clone(input.trim(), github_token),
         "github_push"   => tool_github_push(input.trim(), github_token),
         "github_status" => tool_run_command("git status"),
-        other => format!(
-            "Unknown tool: '{}'. Available: read_file, write_file, list_dir, run_command, http_get, github_clone, github_push, github_status",
-            other
-        ),
+        other => format!("Unknown tool: '{}'", other),
     }
 }
-
-// ── Individual tools ──────────────────────────────────────────────────────
 
 fn tool_read_file(path: &str) -> String {
     match std::fs::read_to_string(path) {
@@ -142,19 +81,28 @@ fn tool_write_file(input: &str) -> String {
         Some(p) => p.trim(),
         None => return "Error: missing file path".to_string(),
     };
-    let _ = lines.next(); // skip "---"
+    let _ = lines.next();
     let content: String = lines.collect::<Vec<_>>().join("\n");
 
     if let Some(parent) = std::path::Path::new(path).parent() {
         if !parent.as_os_str().is_empty() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return format!("Error creating dirs: {}", e);
-            }
+            let _ = std::fs::create_dir_all(parent);
         }
     }
 
     match std::fs::write(path, &content) {
-        Ok(_) => format!("✓ Written {} bytes → '{}'", content.len(), path),
+        Ok(_) => {
+            let success = format!("Written {} bytes → '{}'", content.len(), path);
+            if path.ends_with(".rs") {
+                let test = tool_run_command("cargo test --quiet");
+                format!("{} \n\nAuto test:\n{}", success, test)
+            } else if path.ends_with(".py") {
+                let test = tool_run_command("pytest --tb=no -q");
+                format!("{} \n\nAuto test:\n{}", success, test)
+            } else {
+                success
+            }
+        }
         Err(e) => format!("Error writing '{}': {}", path, e),
     }
 }
@@ -183,12 +131,12 @@ fn tool_list_dir(path: &str) -> String {
 
 pub fn tool_run_command(cmd: &str) -> String {
     let blocked = [
-        "rm -rf /", "rm -rf ~", "mkfs", "dd if=",
-        ":(){ :|:& };:", "> /dev/sda", "format c:",
+    "rm -rf /", "rm -rf ", "mkfs", "dd if=",
+    ":(){ :|:& };:", "> /dev/sda", "format c:",
     ];
     for b in &blocked {
         if cmd.contains(b) {
-            return format!("⛔ Blocked: '{}' is a dangerous command.", cmd);
+            return format!("Blocked: '{}' is a dangerous command.", cmd);
         }
     }
 
@@ -200,12 +148,10 @@ pub fn tool_run_command(cmd: &str) -> String {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
-            let exit   = out.status.code().unwrap_or(-1);
+            let exit = out.status.code().unwrap_or(-1);
 
             let mut result = String::new();
-            if !stdout.is_empty() {
-                result.push_str(stdout.trim_end());
-            }
+            if !stdout.is_empty() { result.push_str(stdout.trim_end()); }
             if !stderr.is_empty() {
                 if !result.is_empty() { result.push('\n'); }
                 result.push_str(&format!("[stderr] {}", stderr.trim_end()));
@@ -223,14 +169,11 @@ pub fn tool_run_command(cmd: &str) -> String {
 }
 
 fn tool_http_get(url: &str) -> String {
-    // Synchronous HTTP fetch using ureq-style blocking or just curl
-    // We use curl since it's available everywhere including Termux
     tool_run_command(&format!("curl -sL --max-time 15 '{}'", url))
 }
 
 fn tool_github_clone(url: &str, github_token: Option<&str>) -> String {
     let clone_url = if let Some(token) = github_token {
-        // Inject token into HTTPS URL: https://TOKEN@github.com/...
         if url.starts_with("https://github.com/") {
             url.replacen("https://", &format!("https://{}@", token), 1)
         } else {
@@ -239,7 +182,6 @@ fn tool_github_clone(url: &str, github_token: Option<&str>) -> String {
     } else {
         url.to_string()
     };
-
     tool_run_command(&format!("git clone '{}'", clone_url))
 }
 
@@ -248,7 +190,6 @@ fn tool_github_push(commit_message: &str, github_token: Option<&str>) -> String 
         return "Error: commit message is required".to_string();
     }
 
-    // Configure token-based auth if available
     let auth_setup = if let Some(token) = github_token {
         format!(
             "git config credential.helper '!f() {{ echo username=token; echo password={}; }}; f' && ",
